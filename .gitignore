@@ -12,7 +12,6 @@ data/
 contracts/out/
 contracts/cache/
 contracts/broadcast/
-contracts/lib/
 
 # node
 node_modules/
