@@ -1,0 +1,56 @@
+name: ci
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+# if you push twice quickly, cancel the older run rather than paying for both
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  hygiene:
+    name: repo hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: check for CRLF line endings
+        run: bash tools/check-eol.sh
+
+  contracts:
+    name: contracts
+    runs-on: ubuntu-latest
+    steps:
+      # submodules: recursive is required, forge-std is a submodule and
+      # without this the checkout has an empty contracts/lib and every
+      # test fails on a missing import
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: install foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+
+      - name: show versions
+        run: |
+          forge --version
+          cd contracts && forge config | grep -E "solc|evm_version"
+
+      - name: check formatting
+        working-directory: contracts
+        run: forge fmt --check
+
+      - name: build
+        working-directory: contracts
+        run: forge build --sizes
+
+      - name: test
+        working-directory: contracts
+        env:
+          FOUNDRY_PROFILE: ci
+        run: forge test -vvv
