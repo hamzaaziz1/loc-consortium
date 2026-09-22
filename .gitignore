@@ -1,0 +1,26 @@
+# generated key material and certs - never committed
+network/keys/**
+!network/keys/.gitkeep
+network/pki/out/**
+!network/pki/out/.gitkeep
+
+# node data directories
+network/compose/data/**
+data/
+
+# foundry
+contracts/out/
+contracts/cache/
+contracts/broadcast/
+contracts/lib/
+
+# node
+node_modules/
+
+# local env
+.env
+*.local
+
+# misc
+*.log
+.DS_Store

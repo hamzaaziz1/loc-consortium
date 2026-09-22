@@ -1,0 +1,20 @@
+# normalise everything to LF in the repo, regardless of checkout platform.
+# this is the single most important file for WSL/Windows interop: besu configs,
+# shell scripts and PEM files break in subtle ways if CRLF leaks in.
+* text=auto eol=lf
+
+*.sh      text eol=lf
+*.yml     text eol=lf
+*.yaml    text eol=lf
+*.toml    text eol=lf
+*.json    text eol=lf
+*.sol     text eol=lf
+*.md      text eol=lf
+Makefile  text eol=lf
+Dockerfile text eol=lf
+
+*.png  binary
+*.jpg  binary
+*.gz   binary
+*.p12  binary
+*.jks  binary
