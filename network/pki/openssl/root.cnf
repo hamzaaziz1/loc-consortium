@@ -1,0 +1,88 @@
+# Root CA configuration for the LoC consortium.
+#
+# This file is used for two things:
+#   1. self-signing the root certificate  (extensions = v3_root_ca)
+#   2. signing organisation intermediates (openssl ca, extensions from -extfile)
+#
+# Paths and DN values come from environment variables set by gen-root.sh, so
+# the config stays declarative and nothing is hardcoded to one machine.
+
+[ default ]
+default_ca = CA_default
+
+[ ca ]
+default_ca = CA_default
+
+# ---------------------------------------------------------------------------
+# The CA database. openssl ca keeps a record of every certificate it issues in
+# index.txt. That record is what makes revocation possible: you cannot revoke a
+# certificate the CA has no memory of issuing.
+# ---------------------------------------------------------------------------
+[ CA_default ]
+dir               = $ENV::PKI_OUT
+certs             = $dir/certs
+crl_dir           = $dir/crl
+new_certs_dir     = $dir/newcerts
+database          = $dir/index.txt
+serial            = $dir/serial
+private_key       = $dir/private/root.key.pem
+certificate       = $dir/certs/root.cert.pem
+crlnumber         = $dir/crlnumber
+crl               = $dir/crl/root.crl.pem
+crl_extensions    = crl_ext
+default_crl_days  = 30
+
+default_md        = sha256
+name_opt          = ca_default
+cert_opt          = ca_default
+default_days      = 1825
+preserve          = no
+policy            = policy_strict
+
+# Do not copy extensions from the CSR into the issued certificate. A CSR is
+# untrusted input; if extensions were copied, a member could request a
+# certificate asserting CA:true and the root would sign it. Every extension we
+# issue is chosen by the CA, never by the requester.
+copy_extensions   = none
+
+# ---------------------------------------------------------------------------
+# What a request must contain to be signed by the root. Only organisation
+# intermediates are signed here, so this is deliberately strict.
+# ---------------------------------------------------------------------------
+[ policy_strict ]
+countryName            = match
+organizationName       = supplied
+organizationalUnitName = optional
+commonName             = supplied
+
+# ---------------------------------------------------------------------------
+# Certificate request settings, used when self-signing the root.
+# ---------------------------------------------------------------------------
+[ req ]
+prompt             = no
+distinguished_name = req_distinguished_name
+string_mask        = utf8only
+default_md         = sha256
+
+[ req_distinguished_name ]
+countryName            = $ENV::CERT_C
+organizationName       = $ENV::CERT_O
+organizationalUnitName = $ENV::CERT_OU
+commonName             = $ENV::CERT_CN
+
+# ---------------------------------------------------------------------------
+# Extensions stamped into the root certificate itself.
+#
+# pathlen:1 is the important one. It says this root may sit at most one CA
+# below itself in a chain: root -> organisation intermediate -> leaf. An
+# organisation cannot create a further sub-CA and delegate issuance onward,
+# because the path length budget is already spent.
+# ---------------------------------------------------------------------------
+[ v3_root_ca ]
+subjectKeyIdentifier   = hash
+authorityKeyIdentifier = keyid:always,issuer
+basicConstraints       = critical, CA:true, pathlen:1
+keyUsage               = critical, cRLSign, keyCertSign
+
+[ crl_ext ]
+authorityKeyIdentifier = keyid:always
