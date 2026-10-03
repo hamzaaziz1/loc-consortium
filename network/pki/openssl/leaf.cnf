@@ -1,0 +1,33 @@
+# End-entity certificate extensions.
+#
+# Kept in its own file because openssl parses a whole config on every call: if
+# these sections lived in intermediate.cnf, every intermediate operation would
+# need LEAF_CN defined.
+#
+# Nothing here is requested by the certificate requester. The CA chooses every
+# extension, including the subject alternative name, which is why
+# copy_extensions is none throughout this PKI.
+
+# A node: both ends of a connection. devp2p peers dial each other, so the same
+# certificate has to work as a server certificate and a client certificate.
+[ v3_node ]
+subjectKeyIdentifier   = hash
+authorityKeyIdentifier = keyid,issuer
+basicConstraints       = critical, CA:false
+keyUsage               = critical, digitalSignature
+extendedKeyUsage       = serverAuth, clientAuth
+subjectAltName         = DNS:$ENV::LEAF_CN
+
+# A client: connects out only. No serverAuth, so this certificate cannot be
+# used to impersonate an endpoint even if the key leaks.
+#
+# keyUsage is digitalSignature alone, not keyEncipherment. These are EC keys;
+# keyEncipherment applies to RSA key transport and would be a permission
+# granted for no reason.
+[ v3_client ]
+subjectKeyIdentifier   = hash
+authorityKeyIdentifier = keyid,issuer
+basicConstraints       = critical, CA:false
+keyUsage               = critical, digitalSignature
+extendedKeyUsage       = clientAuth
+subjectAltName         = DNS:$ENV::LEAF_CN

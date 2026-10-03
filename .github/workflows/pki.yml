@@ -1,0 +1,43 @@
+name: pki
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pki:
+    name: generate and verify PKI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: openssl version
+        run: openssl version
+
+      # The whole CA tree is built from nothing on every run. No key material
+      # is committed, so this also proves the PKI is reproducible from the
+      # repository alone rather than from one laptop's leftovers.
+      - name: generate root CA
+        run: ./network/pki/gen-root.sh
+
+      - name: generate organisation intermediates
+        run: ./network/pki/gen-intermediates.sh
+
+      - name: issue end-entity certificates
+        run: ./network/pki/gen-leaves.sh
+
+      - name: verify name constraints are enforced
+        run: bash test/pki/name-constraints.sh
+
+      - name: confirm no key material is tracked by git
+        run: |
+          if git ls-files | grep -E '\.key\.pem$|\.p12$'; then
+            echo "private key material is tracked by git"
+            exit 1
+          fi
+          echo "no key material tracked"

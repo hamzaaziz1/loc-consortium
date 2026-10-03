@@ -19,8 +19,19 @@ test: ## run contract tests
 	@cd contracts && forge test -vvv
 
 .PHONY: pki
-pki: ## generate the private CA and all node certs (m1)
-	@echo "not implemented until m1"
+pki: ## generate the full CA tree and all certificates
+	@./network/pki/gen-root.sh
+	@./network/pki/gen-intermediates.sh
+	@./network/pki/gen-leaves.sh
+
+.PHONY: pki-test
+pki-test: ## prove the PKI controls are enforced
+	@bash test/pki/name-constraints.sh
+
+.PHONY: pki-clean
+pki-clean: ## destroy all generated key material and certificates
+	@rm -rf network/pki/out
+	@echo "removed network/pki/out"
 
 .PHONY: genesis
 genesis: ## assemble the QBFT genesis file (m2)
