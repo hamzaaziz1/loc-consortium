@@ -4,20 +4,15 @@
 # certificate, and the openssl CA database used to track issuance and
 # revocation.
 #
-# Safe to read before running. It writes only inside network/pki/out/root,
-# which is gitignored, and refuses to overwrite an existing root.
+# Writes only inside network/pki/out/root, which is gitignored, and refuses to
+# overwrite an existing root unless FORCE=1.
 set -euo pipefail
 
 PKI_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export PKI_DIR
+source "$PKI_DIR/lib/common.sh"
+
 export PKI_OUT="$PKI_DIR/out/root"
-
-# Distinguished name for the root. C must match every intermediate's country,
-# because the signing policy in root.cnf requires it.
-export CERT_C="GB"
-export CERT_O="LoC Consortium"
-export CERT_OU="PKI"
-export CERT_CN="LoC Consortium Root CA"
-
 ROOT_KEY="$PKI_OUT/private/root.key.pem"
 ROOT_CERT="$PKI_OUT/certs/root.cert.pem"
 
@@ -28,20 +23,15 @@ if [[ -f "$ROOT_CERT" && "${FORCE:-0}" != "1" ]]; then
   exit 1
 fi
 
+# Key material is written read-only, so a regeneration cannot overwrite in
+# place and has to delete first. A regenerated root is also a new authority,
+# so it starts with an empty issuance ledger rather than inheriting one.
 if [[ "${FORCE:-0}" == "1" ]]; then
   rm -rf "$PKI_OUT"
 fi
 
 echo "==> creating CA directory structure"
-mkdir -p "$PKI_OUT"/{certs,crl,newcerts,private}
-chmod 700 "$PKI_OUT/private"
-
-# index.txt is the issuance ledger. serial and crlnumber are counters openssl
-# increments itself. Starting at 1000 rather than 1 is conventional and avoids
-# single-digit serials, which some tooling handles badly.
-touch "$PKI_OUT/index.txt"
-[[ -f "$PKI_OUT/serial"    ]] || echo 1000 > "$PKI_OUT/serial"
-[[ -f "$PKI_OUT/crlnumber" ]] || echo 1000 > "$PKI_OUT/crlnumber"
+ca_dir_init "$PKI_OUT"
 
 echo "==> generating root private key (EC P-256)"
 # EC P-256 rather than RSA: universally supported by the JVM that Besu runs on,

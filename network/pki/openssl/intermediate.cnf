@@ -1,0 +1,112 @@
+# Organisation intermediate CA configuration.
+#
+# Used in two roles:
+#   as -extfile when the ROOT signs this organisation's intermediate
+#     (section v3_intermediate_ca, where the name constraints live)
+#   as -config when this organisation's CA signs its own leaf certificates
+#     (sections ca / CA_default / policy_leaf)
+#
+# Every organisation-specific value comes from the environment, set by the
+# generation scripts from the org table in openssl/orgs.conf. One config file
+# serves all four members, so a fifth member is a line in a text file rather
+# than a copy-pasted config.
+#
+# NOTE: openssl parses this entire file on every invocation, including sections
+# it will not use. Any $ENV:: reference anywhere in the file must therefore be
+# set on every call, which is why leaf extensions live in leaf.cnf rather than
+# here.
+
+[ default ]
+default_ca = CA_default
+
+[ ca ]
+default_ca = CA_default
+
+[ CA_default ]
+dir               = $ENV::ORG_OUT
+certs             = $dir/certs
+crl_dir           = $dir/crl
+new_certs_dir     = $dir/newcerts
+database          = $dir/index.txt
+serial            = $dir/serial
+private_key       = $dir/private/$ENV::ORG_SLUG.key.pem
+certificate       = $dir/certs/$ENV::ORG_SLUG.cert.pem
+crlnumber         = $dir/crlnumber
+crl               = $dir/crl/$ENV::ORG_SLUG.crl.pem
+crl_extensions    = crl_ext
+default_crl_days  = 30
+
+default_md        = sha256
+name_opt          = ca_default
+cert_opt          = ca_default
+default_days      = 365
+preserve          = no
+policy            = policy_leaf
+copy_extensions   = none
+
+# Permit reissuing a certificate for a subject that already has one. Renewal
+# and key rotation both produce a second certificate with an identical subject,
+# and openssl refuses that by default.
+unique_subject    = no
+
+# What a leaf request must contain. organizationName = match means this CA will
+# only sign certificates for its own organisation. That is enforced twice over:
+# here at signing time, and by the name constraints at validation time on every
+# node that sees the certificate.
+[ policy_leaf ]
+countryName            = match
+organizationName       = match
+organizationalUnitName = optional
+commonName             = supplied
+
+# Distinguished name for the intermediate's own CSR.
+[ req ]
+prompt             = no
+distinguished_name = req_distinguished_name
+string_mask        = utf8only
+default_md         = sha256
+
+[ req_distinguished_name ]
+countryName            = $ENV::CERT_C
+organizationName       = $ENV::ORG_O
+organizationalUnitName = PKI
+commonName             = $ENV::ORG_CN
+
+# ---------------------------------------------------------------------------
+# Extensions the ROOT stamps into this organisation's intermediate.
+#
+# pathlen:0 means this CA may issue end-entity certificates only. It cannot
+# create a further CA below itself, so a member cannot delegate issuance on to
+# anyone else. The root's own pathlen:1 already caps chain depth; this closes
+# the same door from the other side.
+#
+# nameConstraints is what makes a four-intermediate hierarchy safe. All four
+# intermediates are trusted by the same root, so without constraints any member
+# could mint a certificate asserting another member's identity and every node
+# in the network would accept it. See ADR 0003.
+#
+#   permitted DNS      only names inside this organisation's own subtree
+#   permitted dirName  only subjects beginning C=GB, O=<this organisation>
+#   excluded  IP       no address-based identities at all
+#
+# The dirName constraint is not redundant. Some validators fall back to
+# checking the subject common name as a host name, and a DNS-only constraint
+# leaves that path unconstrained.
+#
+# critical means a client that does not understand name constraints must reject
+# the certificate rather than ignore them. Non-critical constraints are
+# decorative.
+# ---------------------------------------------------------------------------
+[ v3_intermediate_ca ]
+subjectKeyIdentifier   = hash
+authorityKeyIdentifier = keyid:always,issuer
+basicConstraints       = critical, CA:true, pathlen:0
+keyUsage               = critical, cRLSign, keyCertSign
+nameConstraints        = critical, permitted;DNS:$ENV::ORG_DOMAIN, permitted;dirName:org_subtree, excluded;IP:0.0.0.0/0.0.0.0, excluded;IP:0:0:0:0:0:0:0:0/0:0:0:0:0:0:0:0
+
+[ org_subtree ]
+countryName      = $ENV::CERT_C
+organizationName = $ENV::ORG_O
+
+[ crl_ext ]
+authorityKeyIdentifier = keyid:always
