@@ -23,3 +23,8 @@ node_modules/
 # misc
 *.log
 .DS_Store
+
+# generated network material
+network/genesis/genesis.json
+network/genesis/manifest.json
+network/genesis/.generated/
