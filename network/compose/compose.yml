@@ -110,12 +110,35 @@ services:
 
   rpc-2:
     <<: *besu-common
-    command: *besu-command
+    command: >-
+      --genesis-file=/genesis/genesis.json
+      --data-path=/data
+      --node-private-key-file=/keys/key.priv
+      --static-nodes-file=/config/static-nodes.json
+      --p2p-port=30303
+      --min-gas-price=0
+      --rpc-http-enabled
+      --rpc-http-host=0.0.0.0
+      --rpc-http-port=8545
+      --rpc-http-api=ETH,NET,WEB3,QBFT,ADMIN,TXPOOL
+      --host-allowlist=*
+      --rpc-http-tls-enabled
+      --rpc-http-tls-keystore-file=/keystores/node.p12
+      --rpc-http-tls-keystore-password-file=/keystores/keystore.password
+      --rpc-http-tls-client-auth-enabled
+      --rpc-http-tls-truststore-file=/keystores/truststore.p12
+      --rpc-http-tls-truststore-password-file=/keystores/keystore.password
+      --metrics-enabled
+      --metrics-host=0.0.0.0
+      --metrics-port=9545
     volumes:
       - ../genesis/genesis.json:/genesis/genesis.json:ro
       - ../config/static-nodes.json:/config/static-nodes.json:ro
       - ../keys/rpc-2.operator/key.priv:/keys/key.priv:ro
-      - rpc-2-data:/data
+      - ../pki/out/keystores/rpc-2.operator.p12:/keystores/node.p12:ro
+      - ../pki/out/keystores/truststore.p12:/keystores/truststore.p12:ro
+      - ../pki/out/keystores/keystore.password:/keystores/keystore.password:ro
+      - rpc-2-data:/data  
     ports:
       - "127.0.0.1:8546:8545"
       - "127.0.0.1:9546:9545"
