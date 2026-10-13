@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 #
-# Builds two generated files from network/config/addressing.conf and the node
-# manifest:
+# Generates, from network/config/addressing.conf and the node manifest:
 #
-#   network/config/static-nodes.json     the devp2p peer list
-#   network/compose/compose.addressing.yml  fixed IPs for the compose stack
+#   network/config/static-nodes.json        the devp2p peer list
+#   network/compose/compose.addressing.yml  fixed IPs and host port bindings
 #
-# Both come from one source file, so the IP a node is given and the IP its
-# peers dial cannot disagree. The compose base file contains no addresses at
-# all, which keeps it readable and keeps the generated part small.
+# Both come from one source, so the address a node is given, the address its
+# peers dial, and the port the smoke test probes cannot disagree. The compose
+# base file holds no addresses or ports at all, which keeps it readable and
+# keeps the generated part small.
 #
 # A full mesh rather than a bootnode: in a consortium every peer is known in
 # advance, so discovery buys nothing and a bootnode would be a single point of
@@ -16,45 +16,28 @@
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$REPO/tools/lib/addressing.sh"
+
 MANIFEST="$REPO/network/genesis/manifest.json"
-ADDRESSING="$REPO/network/config/addressing.conf"
 NODES_OUT="$REPO/network/config/static-nodes.json"
 COMPOSE_OUT="$REPO/network/compose/compose.addressing.yml"
 P2P_PORT=30303
 
-[[ -f "$MANIFEST" ]]   || { echo "no manifest. run ./tools/gen-network.sh first"; exit 1; }
-[[ -f "$ADDRESSING" ]] || { echo "missing $ADDRESSING"; exit 1; }
-
-SUBNET="$(grep -E '^SUBNET=' "$ADDRESSING" | cut -d= -f2)"
-[[ -n "$SUBNET" ]] || { echo "no SUBNET= line in $ADDRESSING"; exit 1; }
-
-trim() {
-  local s="$1"
-  s="${s#"${s%%[![:space:]]*}"}"
-  printf '%s' "${s%"${s##*[![:space:]]}"}"
-}
-
-SERVICES=(); NODES=(); IPS=()
-while IFS='|' read -r service node ip || [[ -n "$service" ]]; do
-  service="$(trim "${service:-}")"
-  [[ -z "$service" || "${service:0:1}" == "#" || "$service" == SUBNET=* ]] && continue
-  NODES+=("$(trim "${node:-}")")
-  IPS+=("$(trim "${ip:-}")")
-  SERVICES+=("$service")
-done < "$ADDRESSING"
+[[ -f "$MANIFEST" ]] || { echo "no manifest. run ./tools/gen-network.sh first"; exit 1; }
+addr_load "$REPO/network/config/addressing.conf"
 
 echo "==> static nodes"
 {
   echo "["
-  for i in "${!NODES[@]}"; do
-    node="${NODES[$i]}"
+  for i in "${!ADDR_NODES[@]}"; do
+    node="${ADDR_NODES[$i]}"
     pub="$(jq -r --arg n "$node" '.nodes[] | select(.node==$n) | .pubkey' "$MANIFEST")"
     if [[ -z "$pub" || "$pub" == "null" ]]; then
       echo "node $node is in addressing.conf but not in the manifest" >&2
       exit 1
     fi
-    sep=","; [[ "$i" -eq $(( ${#NODES[@]} - 1 )) ]] && sep=""
-    printf '  "enode://%s@%s:%s"%s\n' "${pub#0x}" "${IPS[$i]}" "$P2P_PORT" "$sep"
+    sep=","; [[ "$i" -eq $(( ${#ADDR_NODES[@]} - 1 )) ]] && sep=""
+    printf '  "enode://%s@%s:%s"%s\n' "${pub#0x}" "${ADDR_IPS[$i]}" "$P2P_PORT" "$sep"
   done
   echo "]"
 } > "$NODES_OUT"
@@ -71,15 +54,18 @@ echo "==> compose addressing override"
   echo "    name: loc-consortium"
   echo "    ipam:"
   echo "      config:"
-  echo "        - subnet: $SUBNET"
+  echo "        - subnet: $ADDR_SUBNET"
   echo ""
   echo "services:"
-  for i in "${!SERVICES[@]}"; do
-    echo "  ${SERVICES[$i]}:"
+  for i in "${!ADDR_SERVICES[@]}"; do
+    echo "  ${ADDR_SERVICES[$i]}:"
     echo "    networks:"
     echo "      consortium:"
-    echo "        ipv4_address: ${IPS[$i]}"
-    echo "        aliases: [${NODES[$i]}.loc.consortium]"
+    echo "        ipv4_address: ${ADDR_IPS[$i]}"
+    echo "        aliases: [${ADDR_NODES[$i]}.loc.consortium]"
+    echo "    ports:"
+    echo "      - \"127.0.0.1:${ADDR_RPC_PORTS[$i]}:8545\""
+    echo "      - \"127.0.0.1:${ADDR_METRICS_PORTS[$i]}:9545\""
   done
 } > "$COMPOSE_OUT"
 
