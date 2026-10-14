@@ -2,23 +2,28 @@
 #
 # Run from the repository root with: make up
 #
-# This file deliberately contains no IP addresses. Addressing lives in
-# network/config/addressing.conf and is applied by the generated override
-# compose.addressing.yml, so the address a node is given and the address its
-# peers dial come from one source and cannot drift.
+# This file contains no IP addresses and no host port bindings. Addressing
+# lives in network/config/addressing.conf and is applied by the generated
+# override compose.addressing.yml, so an address is written down once.
 #
-# Other design notes that are easy to miss reading the YAML:
+# Design notes that are easy to miss reading the YAML:
+#
+#   Every RPC endpoint requires mutual TLS. Each node mounts ONLY its own
+#   keystore, never the keystore directory: mounting the directory would hand
+#   every node every other node's private key and quietly undo the
+#   per-organisation separation the whole PKI exists to create.
+#
+#   The truststore holds the root certificate alone. A trust anchor's own
+#   extensions are taken as given rather than checked, so putting the four
+#   organisation intermediates in the truststore would mean their
+#   nameConstraints were never evaluated and any member could impersonate any
+#   other. See ADR 0003.
 #
 #   Data directories are named volumes, not bind mounts. Besu writes as root
 #   inside the container, and a bind mount would leave root-owned files on the
 #   host needing sudo to clean up.
 #
-#   Every JVM is capped at 512 MB. Six nodes plus metrics fit in 8 GB, so the
-#   stack comes up on a modest laptop rather than only on a large one.
-#
-#   RPC on the validators is published to 127.0.0.1 for debugging only. A
-#   production deployment exposes no RPC on a block producer; application
-#   traffic belongs on the two RPC nodes.
+#   Every JVM is capped at 512 MB, so the stack comes up on a modest laptop.
 
 x-besu-common: &besu-common
   image: ${BESU_IMAGE:-hyperledger/besu:26.8.1}
@@ -42,9 +47,19 @@ x-besu-command: &besu-command >-
   --rpc-http-port=8545
   --rpc-http-api=ETH,NET,WEB3,QBFT,ADMIN,TXPOOL
   --host-allowlist=*
+  --rpc-http-tls-enabled
+  --rpc-http-tls-keystore-file=/keystores/node.p12
+  --rpc-http-tls-keystore-password-file=/keystores/keystore.password
+  --rpc-http-tls-client-auth-enabled
+  --rpc-http-tls-truststore-file=/keystores/truststore.p12
+  --rpc-http-tls-truststore-password-file=/keystores/keystore.password
   --metrics-enabled
   --metrics-host=0.0.0.0
   --metrics-port=9545
+
+# Volume lists are repeated per service rather than shared via an anchor:
+# YAML anchors substitute whole values, and Compose does not merge lists, so a
+# shared mount list cannot be extended with per-node key material.
 
 services:
 
@@ -54,11 +69,11 @@ services:
     volumes:
       - ../genesis/genesis.json:/genesis/genesis.json:ro
       - ../config/static-nodes.json:/config/static-nodes.json:ro
+      - ../pki/out/keystores/truststore.p12:/keystores/truststore.p12:ro
+      - ../pki/out/keystores/keystore.password:/keystores/keystore.password:ro
       - ../keys/validator-1.importer-bank/key.priv:/keys/key.priv:ro
+      - ../pki/out/keystores/validator-1.importer-bank.p12:/keystores/node.p12:ro
       - validator-importer-data:/data
-    ports:
-      - "127.0.0.1:8551:8545"
-      - "127.0.0.1:9551:9545"
 
   validator-exporter:
     <<: *besu-common
@@ -66,11 +81,11 @@ services:
     volumes:
       - ../genesis/genesis.json:/genesis/genesis.json:ro
       - ../config/static-nodes.json:/config/static-nodes.json:ro
+      - ../pki/out/keystores/truststore.p12:/keystores/truststore.p12:ro
+      - ../pki/out/keystores/keystore.password:/keystores/keystore.password:ro
       - ../keys/validator-1.exporter-bank/key.priv:/keys/key.priv:ro
+      - ../pki/out/keystores/validator-1.exporter-bank.p12:/keystores/node.p12:ro
       - validator-exporter-data:/data
-    ports:
-      - "127.0.0.1:8552:8545"
-      - "127.0.0.1:9552:9545"
 
   validator-logistics:
     <<: *besu-common
@@ -78,11 +93,11 @@ services:
     volumes:
       - ../genesis/genesis.json:/genesis/genesis.json:ro
       - ../config/static-nodes.json:/config/static-nodes.json:ro
+      - ../pki/out/keystores/truststore.p12:/keystores/truststore.p12:ro
+      - ../pki/out/keystores/keystore.password:/keystores/keystore.password:ro
       - ../keys/validator-1.logistics/key.priv:/keys/key.priv:ro
+      - ../pki/out/keystores/validator-1.logistics.p12:/keystores/node.p12:ro
       - validator-logistics-data:/data
-    ports:
-      - "127.0.0.1:8553:8545"
-      - "127.0.0.1:9553:9545"
 
   validator-operator:
     <<: *besu-common
@@ -90,11 +105,11 @@ services:
     volumes:
       - ../genesis/genesis.json:/genesis/genesis.json:ro
       - ../config/static-nodes.json:/config/static-nodes.json:ro
+      - ../pki/out/keystores/truststore.p12:/keystores/truststore.p12:ro
+      - ../pki/out/keystores/keystore.password:/keystores/keystore.password:ro
       - ../keys/validator-1.operator/key.priv:/keys/key.priv:ro
+      - ../pki/out/keystores/validator-1.operator.p12:/keystores/node.p12:ro
       - validator-operator-data:/data
-    ports:
-      - "127.0.0.1:8554:8545"
-      - "127.0.0.1:9554:9545"
 
   rpc-1:
     <<: *besu-common
@@ -102,46 +117,23 @@ services:
     volumes:
       - ../genesis/genesis.json:/genesis/genesis.json:ro
       - ../config/static-nodes.json:/config/static-nodes.json:ro
+      - ../pki/out/keystores/truststore.p12:/keystores/truststore.p12:ro
+      - ../pki/out/keystores/keystore.password:/keystores/keystore.password:ro
       - ../keys/rpc-1.operator/key.priv:/keys/key.priv:ro
+      - ../pki/out/keystores/rpc-1.operator.p12:/keystores/node.p12:ro
       - rpc-1-data:/data
-    ports:
-      - "127.0.0.1:8545:8545"
-      - "127.0.0.1:9545:9545"
 
   rpc-2:
     <<: *besu-common
-    command: >-
-      --genesis-file=/genesis/genesis.json
-      --data-path=/data
-      --node-private-key-file=/keys/key.priv
-      --static-nodes-file=/config/static-nodes.json
-      --p2p-port=30303
-      --min-gas-price=0
-      --rpc-http-enabled
-      --rpc-http-host=0.0.0.0
-      --rpc-http-port=8545
-      --rpc-http-api=ETH,NET,WEB3,QBFT,ADMIN,TXPOOL
-      --host-allowlist=*
-      --rpc-http-tls-enabled
-      --rpc-http-tls-keystore-file=/keystores/node.p12
-      --rpc-http-tls-keystore-password-file=/keystores/keystore.password
-      --rpc-http-tls-client-auth-enabled
-      --rpc-http-tls-truststore-file=/keystores/truststore.p12
-      --rpc-http-tls-truststore-password-file=/keystores/keystore.password
-      --metrics-enabled
-      --metrics-host=0.0.0.0
-      --metrics-port=9545
+    command: *besu-command
     volumes:
       - ../genesis/genesis.json:/genesis/genesis.json:ro
       - ../config/static-nodes.json:/config/static-nodes.json:ro
-      - ../keys/rpc-2.operator/key.priv:/keys/key.priv:ro
-      - ../pki/out/keystores/rpc-2.operator.p12:/keystores/node.p12:ro
       - ../pki/out/keystores/truststore.p12:/keystores/truststore.p12:ro
       - ../pki/out/keystores/keystore.password:/keystores/keystore.password:ro
-      - rpc-2-data:/data  
-    ports:
-      - "127.0.0.1:8546:8545"
-      - "127.0.0.1:9546:9545"
+      - ../keys/rpc-2.operator/key.priv:/keys/key.priv:ro
+      - ../pki/out/keystores/rpc-2.operator.p12:/keystores/node.p12:ro
+      - rpc-2-data:/data
 
 networks:
   consortium:
