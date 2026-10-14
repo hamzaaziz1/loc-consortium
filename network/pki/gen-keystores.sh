@@ -19,11 +19,39 @@
 # Root only means validation walks leaf, then intermediate, then root, and
 # evaluates the constraints on the way. Clients present their own chain, which
 # is why gen-leaves.sh writes a .chain.pem for each certificate.
+#
+# THE TRUSTSTORE IS BUILT WITH keytool, NOT openssl, AND THAT MATTERS.
+#
+# A certificate in a Java truststore has to be marked as a trusted certificate
+# entry, which is a Java-specific attribute inside the PKCS12 bag that
+# `openssl pkcs12 -export -nokeys` does not write. The resulting file is a
+# structurally valid PKCS12 that Java loads without complaint and then treats
+# as containing zero trust anchors.
+#
+# Nothing reports this. The node starts cleanly, the TLS listener comes up, and
+# every mutual TLS handshake then fails with the server requesting a client
+# certificate while advertising no acceptable CAs. The diagnostic that finds it
+# is `openssl s_client`, whose "acceptable client certificate CA names" line
+# shows what the server actually trusts rather than what you believe you gave
+# it.
+#
+# keytool comes from the pinned Besu image rather than a separate JDK, so the
+# tool writing the truststore is the same JDK that will read it. Given the bug
+# above was precisely a writer/reader mismatch, that is worth the coupling.
 set -euo pipefail
 
 PKI_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export PKI_DIR
 source "$PKI_DIR/lib/common.sh"
+
+BESU_IMAGE="${BESU_IMAGE:-hyperledger/besu:26.8.1}"
+
+# The truststore step needs keytool, which comes from the Besu image, so this
+# script now requires docker where the earlier PKI scripts did not.
+command -v docker >/dev/null || {
+  echo "docker is required to build the truststore (keytool comes from the Besu image)"
+  exit 1
+}
 
 OUT="$PKI_DIR/out"
 STORE_DIR="$OUT/keystores"
@@ -81,14 +109,35 @@ while IFS='|' read -r name slug role kind || [[ -n "${name:-}" ]]; do
   make_keystore "$name" "$slug" "$role" "$kind"
 done < "$PKI_DIR/openssl/nodes.conf"
 
-echo "==> truststore (root only)"
-openssl pkcs12 -export -nokeys \
-  -in "$ROOT_CERT" \
-  -name "loc-consortium-root" \
-  -out "$STORE_DIR/truststore.p12" \
-  -passout "pass:$PW"
+echo "==> truststore (root only, built with keytool)"
+# keytool refuses to overwrite, and rm -rf above has already cleared the
+# directory, so there is nothing to remove here.
+docker run --rm --user "$(id -u):$(id -g)" \
+  -v "$OUT:/pki" \
+  --entrypoint keytool "$BESU_IMAGE" \
+  -importcert -noprompt \
+  -alias loc-consortium-root \
+  -file /pki/root/certs/root.cert.pem \
+  -keystore /pki/keystores/truststore.p12 \
+  -storetype PKCS12 \
+  -storepass "$PW" >/dev/null
 chmod 444 "$STORE_DIR/truststore.p12"
 echo "    truststore.p12"
+
+# Assert the anchor is actually there. The failure this guards against is
+# silent, so the check is not optional.
+anchors="$(docker run --rm --user "$(id -u):$(id -g)" \
+  -v "$OUT:/pki" --entrypoint keytool "$BESU_IMAGE" \
+  -list -keystore /pki/keystores/truststore.p12 \
+  -storetype PKCS12 -storepass "$PW" 2>/dev/null \
+  | grep -c trustedCertEntry || true)"
+if [[ "$anchors" -lt 1 ]]; then
+  echo
+  echo "truststore contains no trusted certificate entries."
+  echo "every mutual TLS handshake would fail with no error logged anywhere."
+  exit 1
+fi
+echo "    $anchors trusted certificate entry present"
 
 echo
 echo "keystores in $STORE_DIR"
