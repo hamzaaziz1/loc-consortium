@@ -135,6 +135,38 @@ services:
       - ../pki/out/keystores/rpc-2.operator.p12:/keystores/node.p12:ro
       - rpc-2-data:/data
 
+  # --- operator tooling proxy ------------------------------------------------
+  # Terminates plain HTTP on loopback and speaks mutual TLS to rpc-1, holding
+  # the operator's deployer identity.
+  #
+  # This exists because Foundry cannot present a client certificate. It is not
+  # a workaround for the TLS design, it is how operators run tooling against
+  # mutually authenticated endpoints in practice: no toolchain carries
+  # certificate plumbing for every client, and keeping the deploy key and the
+  # network identity in separate places is a property worth having anyway.
+  #
+  # The alternative, a loopback plaintext RPC port on one node, would be a
+  # permanent hole in what m3 established and the first thing a reviewer would
+  # notice.
+  #
+  # Started only when needed:  docker compose --profile ops up -d rpc-proxy
+  rpc-proxy:
+    image: nginx:1.27-alpine
+    profiles: ["ops"]
+    restart: unless-stopped
+    volumes:
+      - ./proxy/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ../pki/out/operator/issued/deployer/deployer.chain.pem:/certs/client.chain.pem:ro
+      - ../pki/out/operator/issued/deployer/deployer.key.pem:/certs/client.key.pem:ro
+      - ../pki/out/root/certs/root.cert.pem:/certs/root.pem:ro
+    ports:
+      # Bound to loopback. Anything reaching this port is already on the host
+      # and holds the operator's network identity by proxy, so the binding is
+      # the only access control there is.
+      - "127.0.0.1:8600:8600"
+    networks:
+      consortium: {}
+
 networks:
   consortium:
     name: loc-consortium
