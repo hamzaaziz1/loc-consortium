@@ -98,7 +98,7 @@ contract GovernorTest is Test {
         assertGt(governor.proposal(id).passedAt, 0, "two of three carries");
     }
 
-    function test_additionNeedsMajorityOfAll() public {
+    function test_additionNeedsMajorityOfAll() public view {
         assertEq(governor.votesRequired(bytes32(0)), 3, "4 eligible, majority is 3");
     }
 

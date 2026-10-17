@@ -8,6 +8,12 @@ optimizer = true
 optimizer_runs = 200
 verbosity = 2
 
+# The deployment script reads the founding consortium from a generated file
+# outside this directory. Foundry denies filesystem access by default, which
+# is the right default: a script can otherwise read anything the user can.
+# Read-only, one directory, no write access anywhere.
+fs_permissions = [{ access = "read", path = "../network/config" }]
+
 [profile.default.fuzz]
 runs = 512
 
