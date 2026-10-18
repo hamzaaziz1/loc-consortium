@@ -1,7 +1,8 @@
 {
+  "_comment": "Input to 'besu operator generate-blockchain-config' for the staging environment. Committed; the genesis it produces is not.",
   "genesis": {
     "config": {
-      "chainId": 7753,
+      "chainId": 7754,
 
       "homesteadBlock": 0,
       "eip150Block": 0,

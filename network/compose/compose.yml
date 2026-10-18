@@ -169,7 +169,10 @@ services:
       # Bound to loopback. Anything reaching this port is already on the host
       # and holds the operator's network identity by proxy, so the binding is
       # the only access control there is.
-      - "127.0.0.1:8600:8600"
+      # Port differs per environment so the two proxies cannot collide, and so
+      # a deployment aimed at the wrong stack fails rather than succeeding
+      # against the network holding real state.
+      - "127.0.0.1:${PROXY_PORT:-8600}:8600"
     networks:
       consortium: {}
 

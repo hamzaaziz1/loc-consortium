@@ -8,13 +8,19 @@ SHELL := /bin/bash
 LOC_ENV ?= local
 export LOC_ENV
 
+# Host port for the operator tooling proxy, distinct per environment.
+PROXY_PORT_local   := 8600
+PROXY_PORT_staging := 8700
+PROXY_PORT := $(PROXY_PORT_$(LOC_ENV))
+export PROXY_PORT
+
 COMPOSE := docker compose -p loc-$(LOC_ENV) \
 	-f network/compose/compose.yml \
 	-f network/compose/compose.$(LOC_ENV).yml
 
 .PHONY: help
 help: ## show this help
-	@echo "environment: $(LOC_ENV)   (override with LOC_ENV=staging)"
+	@echo "environment: $(LOC_ENV)   proxy port: $(PROXY_PORT)   (override with LOC_ENV=staging)"
 	@echo
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -98,6 +104,7 @@ logs: ## tail logs from all nodes
 .PHONY: proxy-up
 proxy-up: ## start the operator tooling TLS proxy
 	@$(COMPOSE) --profile ops up -d rpc-proxy
+	@echo "$(LOC_ENV) RPC available at http://127.0.0.1:$(PROXY_PORT)"
 
 .PHONY: proxy-down
 proxy-down: ## stop the operator tooling TLS proxy

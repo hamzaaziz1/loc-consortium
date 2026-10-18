@@ -1,0 +1,16 @@
+Replace the generated-material section of .gitignore with this. The old
+entries point at paths that no longer exist after the environment split, so
+generated files under network/genesis/<env>/ are currently NOT ignored.
+
+# generated network material, per environment
+network/genesis/*/genesis.json
+network/genesis/*/manifest.json
+network/genesis/*/.generated/
+network/config/*/static-nodes.json
+network/config/*/deploy.json
+network/compose/compose.local.yml
+network/compose/compose.staging.yml
+
+# committed, do not ignore:
+#   network/genesis/config/*.json      generator inputs
+#   network/config/*/addressing.conf   addressing per environment

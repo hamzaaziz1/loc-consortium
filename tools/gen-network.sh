@@ -24,6 +24,17 @@ GEN_DIR="$ENV_GENESIS_DIR"
 KEYS_DIR="$ENV_KEYS_DIR"
 WORK="$GEN_DIR/.generated"
 
+GEN_CONFIG="$NET/genesis/config/${ENV_NAME}.json"
+if [[ ! -f "$GEN_CONFIG" ]]; then
+  echo "no generator config at $GEN_CONFIG"
+  exit 1
+fi
+
+# Each environment has its own chain id. Matching ids across two stacks would
+# mean a transaction aimed at the wrong RPC port is accepted rather than
+# rejected, which is exactly the mistake the port offset exists to prevent.
+echo "    chain id $(jq -r .genesis.config.chainId "$GEN_CONFIG")"
+
 mkdir -p "$GEN_DIR"
 
 if [[ -f "$GEN_DIR/genesis.json" && "${FORCE:-0}" != "1" ]]; then
@@ -47,11 +58,11 @@ echo "==> [$ENV_NAME] generating QBFT genesis and validator keys"
 # The generator refuses to write into a directory that already exists, so the
 # parent is mounted and besu creates the leaf itself.
 docker_besu \
-  -v "$NET/genesis":/cfg \
+  -v "$NET/genesis/config":/cfg \
   -v "$GEN_DIR":/out \
   "$BESU_IMAGE" \
   operator generate-blockchain-config \
-    --config-file=/cfg/qbft-config.json \
+    --config-file=/cfg/${ENV_NAME}.json \
     --to=/out/.generated >/dev/null
 
 mv "$WORK/genesis.json" "$GEN_DIR/genesis.json"
