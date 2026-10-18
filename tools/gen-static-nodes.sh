@@ -17,16 +17,19 @@ set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$REPO/tools/lib/addressing.sh"
+source "$REPO/tools/lib/env.sh"
+env_init "$REPO"
 
-MANIFEST="$REPO/network/genesis/manifest.json"
-NODES_OUT="$REPO/network/config/static-nodes.json"
-COMPOSE_OUT="$REPO/network/compose/compose.addressing.yml"
+MANIFEST="$ENV_MANIFEST"
+NODES_OUT="$ENV_STATIC_NODES"
+COMPOSE_OUT="$ENV_COMPOSE_OVERRIDE"
 P2P_PORT=30303
 
 [[ -f "$MANIFEST" ]] || { echo "no manifest. run ./tools/gen-network.sh first"; exit 1; }
-addr_load "$REPO/network/config/addressing.conf"
+mkdir -p "$ENV_CONFIG_DIR"
+addr_load "$ENV_ADDRESSING"
 
-echo "==> static nodes"
+echo "==> [$ENV_NAME] static nodes"
 {
   echo "["
   for i in "${!ADDR_NODES[@]}"; do
@@ -51,7 +54,7 @@ echo "==> compose addressing override"
   echo ""
   echo "networks:"
   echo "  consortium:"
-  echo "    name: loc-consortium"
+  echo "    name: loc-$ENV_NAME"
   echo "    ipam:"
   echo "      config:"
   echo "        - subnet: $ADDR_SUBNET"

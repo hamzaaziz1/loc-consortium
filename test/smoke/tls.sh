@@ -19,7 +19,9 @@ set -uo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$REPO/tools/lib/addressing.sh"
 source "$REPO/network/pki/lib/common.sh"
-addr_load "$REPO/network/config/addressing.conf" || exit 1
+source "$REPO/tools/lib/env.sh"
+env_init "$REPO"
+addr_load "$ENV_ADDRESSING" || exit 1
 
 PKI="$REPO/network/pki/out"
 export PKI_DIR="$REPO/network/pki"

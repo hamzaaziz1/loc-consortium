@@ -16,11 +16,15 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 NET="$REPO/network"
 export PKI_DIR="$NET/pki"
 source "$PKI_DIR/lib/common.sh"
+source "$REPO/tools/lib/env.sh"
+env_init "$REPO"
 
 BESU_IMAGE="${BESU_IMAGE:-hyperledger/besu:26.8.1}"
-GEN_DIR="$NET/genesis"
-KEYS_DIR="$NET/keys"
+GEN_DIR="$ENV_GENESIS_DIR"
+KEYS_DIR="$ENV_KEYS_DIR"
 WORK="$GEN_DIR/.generated"
+
+mkdir -p "$GEN_DIR"
 
 if [[ -f "$GEN_DIR/genesis.json" && "${FORCE:-0}" != "1" ]]; then
   echo "genesis already exists at $GEN_DIR/genesis.json"
@@ -39,11 +43,11 @@ docker_besu() {
   docker run --rm --user "$(id -u):$(id -g)" "$@"
 }
 
-echo "==> generating QBFT genesis and validator keys"
+echo "==> [$ENV_NAME] generating QBFT genesis and validator keys"
 # The generator refuses to write into a directory that already exists, so the
 # parent is mounted and besu creates the leaf itself.
 docker_besu \
-  -v "$GEN_DIR":/cfg \
+  -v "$NET/genesis":/cfg \
   -v "$GEN_DIR":/out \
   "$BESU_IMAGE" \
   operator generate-blockchain-config \

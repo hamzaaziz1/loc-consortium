@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 #
+# Environment-aware: LOC_ENV selects local (default) or staging.
+#
 # Asserts that the consortium network is healthy, not merely running.
 #
 # Containers can be up while the chain is stalled, while nodes disagree on the
@@ -18,10 +20,12 @@ set -uo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$REPO/tools/lib/addressing.sh"
-addr_load "$REPO/network/config/addressing.conf" || exit 1
+source "$REPO/tools/lib/env.sh"
+env_init "$REPO"
+addr_load "$ENV_ADDRESSING" || exit 1
 
-GENESIS="$REPO/network/genesis/genesis.json"
-MANIFEST="$REPO/network/genesis/manifest.json"
+GENESIS="$ENV_GENESIS"
+MANIFEST="$ENV_MANIFEST"
 PKI="$REPO/network/pki/out"
 HOST="${SMOKE_HOST:-127.0.0.1}"
 

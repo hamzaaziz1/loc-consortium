@@ -22,15 +22,17 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export PKI_DIR="$REPO/network/pki"
 source "$PKI_DIR/lib/common.sh"
 source "$REPO/tools/lib/addressing.sh"
+source "$REPO/tools/lib/env.sh"
+env_init "$REPO"
 
-MANIFEST="$REPO/network/genesis/manifest.json"
-MEMBER_KEYS="$REPO/network/keys/members"
-OUT="$REPO/network/config/deploy.json"
+MANIFEST="$ENV_MANIFEST"
+MEMBER_KEYS="$ENV_KEYS_DIR/members"
+OUT="$ENV_DEPLOY_CONFIG"
 P2P_PORT=30303
 
 [[ -f "$MANIFEST" ]] || { echo "no manifest. run ./tools/gen-network.sh first"; exit 1; }
 command -v cast >/dev/null || { echo "cast (foundry) is required to generate member accounts"; exit 1; }
-addr_load "$REPO/network/config/addressing.conf"
+addr_load "$ENV_ADDRESSING"
 
 ip_of() {
   local node="$1" i
@@ -72,7 +74,7 @@ emit_member() {
     '{slug:$slug,name:$name,validator:$validator,account:$account,enode:$enode}')")
 }
 
-echo "==> joining founding consortium"
+echo "==> [$ENV_NAME] joining founding consortium"
 for_each_org emit_member
 
 # An explicit count rather than relying on the JSON reader to measure the

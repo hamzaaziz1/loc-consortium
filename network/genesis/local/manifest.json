@@ -1,0 +1,39 @@
+{
+  "besu": "hyperledger/besu:26.8.1",
+  "nodes": [
+    {
+      "node": "validator-1.importer-bank",
+      "role": "validator",
+      "address": "0x50ade7a83100254c56d325891cecb6caf9a4b83f",
+      "pubkey": "0xa000add2d9ae554267c69edbd8ded86fa4e048c57572565817fcc5bbb786af8175c8cab52bbf422ee0e67cfe9787080929a71c37353213bb1504c84c56d64e63"
+    },
+    {
+      "node": "validator-1.exporter-bank",
+      "role": "validator",
+      "address": "0x7b1b3df6e6bc641fc7657d4d9853c94c0bc4b159",
+      "pubkey": "0xfcdd980867ea970ad22de32d1137cae8bb8f026f3470f7828fdb29b128fed0a3a5d0875d2fbc25853fc6468a132ac3e66f4281b4361ca19a5694034d2a02df20"
+    },
+    {
+      "node": "validator-1.logistics",
+      "role": "validator",
+      "address": "0xb0d4b6c1918fc18a0f1445480fceb5f19c26fc0a",
+      "pubkey": "0xcc5310ea117fd89cdec899bb4bcef0fcc5a4b459bb7f32d658e7e4050ba344226c33a2565382378e25e2046da57fb853910bce216b65b2101b2ccf9df1c2f6e4"
+    },
+    {
+      "node": "validator-1.operator",
+      "role": "validator",
+      "address": "0xfec4bd149c070c72fa500d391762b2b6375fd418",
+      "pubkey": "0x5f5715b01598dd16c390f41a362379f6d536f3a7f447f67a0b3e4f7c097f18bd76f3d3c3b03d852d43b5c922bb599078292e9a8a6bcce5d13efba3b112ad46aa"
+    },
+    {
+      "node": "rpc-1.operator",
+      "role": "rpc",
+      "pubkey": "0x8288aed5f0365aee456e6366d39e61a37b7216e142afb6bbfd19874a03fa2a71c6169c018a46c27e3da809b02da4733f4815f4a08c3086c52e6a09130cbfd5b4"
+    },
+    {
+      "node": "rpc-2.operator",
+      "role": "rpc",
+      "pubkey": "0x91784a89b69c01f2f058d8f96a39b3a5bf5e4bdd39c86e13072350ea90a5fa5a3a70a9b7049d4b9905b529f9ccec482cd05a0e6b27e42b954b76425d13030a3d"
+    }
+  ]
+}

@@ -3,8 +3,14 @@
 # Run from the repository root with: make up
 #
 # This file contains no IP addresses and no host port bindings. Addressing
-# lives in network/config/addressing.conf and is applied by the generated
-# override compose.addressing.yml, so an address is written down once.
+# lives in network/config/<env>/addressing.conf and is applied by the
+# generated override compose.<env>.yml, so an address is written down once.
+#
+# Two environments share this file: `local` holds real chain state, `staging`
+# is the rehearsal stack where risky operations are tried first. They differ by
+# subnet, a +100 port offset, and the compose project name, so a command aimed
+# at the wrong one fails rather than quietly touching the live network.
+# Chain material paths are selected by LOC_ENV; the PKI is shared.
 #
 # Design notes that are easy to miss reading the YAML:
 #
@@ -67,11 +73,11 @@ services:
     <<: *besu-common
     command: *besu-command
     volumes:
-      - ../genesis/genesis.json:/genesis/genesis.json:ro
-      - ../config/static-nodes.json:/config/static-nodes.json:ro
+      - ../genesis/${LOC_ENV:-local}/genesis.json:/genesis/genesis.json:ro
+      - ../config/${LOC_ENV:-local}/static-nodes.json:/config/static-nodes.json:ro
       - ../pki/out/keystores/truststore.p12:/keystores/truststore.p12:ro
       - ../pki/out/keystores/keystore.password:/keystores/keystore.password:ro
-      - ../keys/validator-1.importer-bank/key.priv:/keys/key.priv:ro
+      - ../keys/${LOC_ENV:-local}/validator-1.importer-bank/key.priv:/keys/key.priv:ro
       - ../pki/out/keystores/validator-1.importer-bank.p12:/keystores/node.p12:ro
       - validator-importer-data:/data
 
@@ -79,11 +85,11 @@ services:
     <<: *besu-common
     command: *besu-command
     volumes:
-      - ../genesis/genesis.json:/genesis/genesis.json:ro
-      - ../config/static-nodes.json:/config/static-nodes.json:ro
+      - ../genesis/${LOC_ENV:-local}/genesis.json:/genesis/genesis.json:ro
+      - ../config/${LOC_ENV:-local}/static-nodes.json:/config/static-nodes.json:ro
       - ../pki/out/keystores/truststore.p12:/keystores/truststore.p12:ro
       - ../pki/out/keystores/keystore.password:/keystores/keystore.password:ro
-      - ../keys/validator-1.exporter-bank/key.priv:/keys/key.priv:ro
+      - ../keys/${LOC_ENV:-local}/validator-1.exporter-bank/key.priv:/keys/key.priv:ro
       - ../pki/out/keystores/validator-1.exporter-bank.p12:/keystores/node.p12:ro
       - validator-exporter-data:/data
 
@@ -91,11 +97,11 @@ services:
     <<: *besu-common
     command: *besu-command
     volumes:
-      - ../genesis/genesis.json:/genesis/genesis.json:ro
-      - ../config/static-nodes.json:/config/static-nodes.json:ro
+      - ../genesis/${LOC_ENV:-local}/genesis.json:/genesis/genesis.json:ro
+      - ../config/${LOC_ENV:-local}/static-nodes.json:/config/static-nodes.json:ro
       - ../pki/out/keystores/truststore.p12:/keystores/truststore.p12:ro
       - ../pki/out/keystores/keystore.password:/keystores/keystore.password:ro
-      - ../keys/validator-1.logistics/key.priv:/keys/key.priv:ro
+      - ../keys/${LOC_ENV:-local}/validator-1.logistics/key.priv:/keys/key.priv:ro
       - ../pki/out/keystores/validator-1.logistics.p12:/keystores/node.p12:ro
       - validator-logistics-data:/data
 
@@ -103,11 +109,11 @@ services:
     <<: *besu-common
     command: *besu-command
     volumes:
-      - ../genesis/genesis.json:/genesis/genesis.json:ro
-      - ../config/static-nodes.json:/config/static-nodes.json:ro
+      - ../genesis/${LOC_ENV:-local}/genesis.json:/genesis/genesis.json:ro
+      - ../config/${LOC_ENV:-local}/static-nodes.json:/config/static-nodes.json:ro
       - ../pki/out/keystores/truststore.p12:/keystores/truststore.p12:ro
       - ../pki/out/keystores/keystore.password:/keystores/keystore.password:ro
-      - ../keys/validator-1.operator/key.priv:/keys/key.priv:ro
+      - ../keys/${LOC_ENV:-local}/validator-1.operator/key.priv:/keys/key.priv:ro
       - ../pki/out/keystores/validator-1.operator.p12:/keystores/node.p12:ro
       - validator-operator-data:/data
 
@@ -115,11 +121,11 @@ services:
     <<: *besu-common
     command: *besu-command
     volumes:
-      - ../genesis/genesis.json:/genesis/genesis.json:ro
-      - ../config/static-nodes.json:/config/static-nodes.json:ro
+      - ../genesis/${LOC_ENV:-local}/genesis.json:/genesis/genesis.json:ro
+      - ../config/${LOC_ENV:-local}/static-nodes.json:/config/static-nodes.json:ro
       - ../pki/out/keystores/truststore.p12:/keystores/truststore.p12:ro
       - ../pki/out/keystores/keystore.password:/keystores/keystore.password:ro
-      - ../keys/rpc-1.operator/key.priv:/keys/key.priv:ro
+      - ../keys/${LOC_ENV:-local}/rpc-1.operator/key.priv:/keys/key.priv:ro
       - ../pki/out/keystores/rpc-1.operator.p12:/keystores/node.p12:ro
       - rpc-1-data:/data
 
@@ -127,11 +133,11 @@ services:
     <<: *besu-common
     command: *besu-command
     volumes:
-      - ../genesis/genesis.json:/genesis/genesis.json:ro
-      - ../config/static-nodes.json:/config/static-nodes.json:ro
+      - ../genesis/${LOC_ENV:-local}/genesis.json:/genesis/genesis.json:ro
+      - ../config/${LOC_ENV:-local}/static-nodes.json:/config/static-nodes.json:ro
       - ../pki/out/keystores/truststore.p12:/keystores/truststore.p12:ro
       - ../pki/out/keystores/keystore.password:/keystores/keystore.password:ro
-      - ../keys/rpc-2.operator/key.priv:/keys/key.priv:ro
+      - ../keys/${LOC_ENV:-local}/rpc-2.operator/key.priv:/keys/key.priv:ro
       - ../pki/out/keystores/rpc-2.operator.p12:/keystores/node.p12:ro
       - rpc-2-data:/data
 
@@ -169,7 +175,7 @@ services:
 
 networks:
   consortium:
-    name: loc-consortium
+    name: loc-${LOC_ENV:-local}
 
 volumes:
   validator-importer-data:
