@@ -1,31 +1,45 @@
 {
-  "config" : {
-    "chainId" : 7754,
-    "homesteadBlock" : 0,
-    "eip150Block" : 0,
-    "eip155Block" : 0,
-    "eip158Block" : 0,
-    "byzantiumBlock" : 0,
-    "constantinopleBlock" : 0,
-    "petersburgBlock" : 0,
-    "istanbulBlock" : 0,
-    "berlinBlock" : 0,
-    "londonBlock" : 0,
-    "parisBlock" : 0,
-    "shanghaiTime" : 0,
-    "zeroBaseFee" : true,
-    "qbft" : {
-      "blockperiodseconds" : 2,
-      "epochlength" : 30000,
-      "requesttimeoutseconds" : 4
+  "config": {
+    "chainId": 7754,
+    "homesteadBlock": 0,
+    "eip150Block": 0,
+    "eip155Block": 0,
+    "eip158Block": 0,
+    "byzantiumBlock": 0,
+    "constantinopleBlock": 0,
+    "petersburgBlock": 0,
+    "istanbulBlock": 0,
+    "berlinBlock": 0,
+    "londonBlock": 0,
+    "parisBlock": 0,
+    "shanghaiTime": 0,
+    "zeroBaseFee": true,
+    "qbft": {
+      "blockperiodseconds": 2,
+      "epochlength": 30000,
+      "requesttimeoutseconds": 4
+    },
+    "transitions": {
+      "qbft": [
+        {
+          "block": 1400,
+          "validatorselectionmode": "contract",
+          "validatorcontractaddress": "0x0c6028d57b394c41072c4b1d97673227ab30bc64"
+        },
+        {
+          "block": 1650,
+          "validatorselectionmode": "contract",
+          "validatorcontractaddress": "0x14b74af055d5d938bdeaafb0bd091dc5aec62d59"
+        }
+      ]
     }
   },
-  "nonce" : "0x0",
-  "timestamp" : "0x0",
-  "gasLimit" : "0x1C9C380",
-  "difficulty" : "0x1",
-  "mixHash" : "0x63746963616c2062797a616e74696e65206661756c7420746f6c6572616e6365",
-  "coinbase" : "0x0000000000000000000000000000000000000000",
-  "alloc" : { },
-  "extraData" : "0xf87aa00000000000000000000000000000000000000000000000000000000000000000f854942b178dff4df2f75a48e77e05884ae4804ac29cc39489f455f66a3cede613ab7926964248a629cb2768942b121ee528816716589dc7537eb45b8fb82d3b3f94ccd0411dc98b577eeac63f1b7fff59c7939fbce4c080c0"
+  "nonce": "0x0",
+  "timestamp": "0x0",
+  "gasLimit": "0x1C9C380",
+  "difficulty": "0x1",
+  "mixHash": "0x63746963616c2062797a616e74696e65206661756c7420746f6c6572616e6365",
+  "coinbase": "0x0000000000000000000000000000000000000000",
+  "alloc": {},
+  "extraData": "0xf87aa00000000000000000000000000000000000000000000000000000000000000000f854942b178dff4df2f75a48e77e05884ae4804ac29cc39489f455f66a3cede613ab7926964248a629cb2768942b121ee528816716589dc7537eb45b8fb82d3b3f94ccd0411dc98b577eeac63f1b7fff59c7939fbce4c080c0"
 }

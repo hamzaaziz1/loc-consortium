@@ -13,6 +13,7 @@ verbosity = 2
 # is the right default: a script can otherwise read anything the user can.
 # Read-only, one directory, no write access anywhere.
 fs_permissions = [{ access = "read", path = "../network/config" }]
+# The path above covers subdirectories, one per environment.
 
 [profile.default.fuzz]
 runs = 512

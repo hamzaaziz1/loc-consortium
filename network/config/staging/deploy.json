@@ -1,0 +1,33 @@
+{
+  "count": 4,
+  "members": [
+    {
+      "slug": "importer-bank",
+      "name": "Importer Bank",
+      "validator": "0x2b121ee528816716589dc7537eb45b8fb82d3b3f",
+      "account": "0x2C6cb78Ec50365E8Db586310895AAa129012805E",
+      "enode": "enode://58d24e587261ca905b1621912569b0a19da82e61bf049392649d45e3e753aeb6b64190d3ea2860bbe1f6a20031c19b0538a308d9e2d61e1314b23b8cf0d03712@172.29.0.11:30303"
+    },
+    {
+      "slug": "exporter-bank",
+      "name": "Exporter Bank",
+      "validator": "0x2b178dff4df2f75a48e77e05884ae4804ac29cc3",
+      "account": "0x1C1B72510fb1411eD730AC73b68F385288783D13",
+      "enode": "enode://28645f332e8ca785be6e028276acd3b9f76bb57cb5685f5623fa9492a60f47f678a937ac0663c91dc91f851d9f7be728d02c470e6b6d74510b8bce7862587713@172.29.0.12:30303"
+    },
+    {
+      "slug": "logistics",
+      "name": "Logistics Operator",
+      "validator": "0x89f455f66a3cede613ab7926964248a629cb2768",
+      "account": "0x4eE0D2e4bdf472EAC3A751b3Af429cCeb9D45948",
+      "enode": "enode://47fb0c23f5ec63b36cb4f9d8b142c061fc4fb76337c23099d19267c1a00a31261cbb18fa57385e440b1babb4a139bd92a8c9d20427ac58c8d004818002c603f4@172.29.0.13:30303"
+    },
+    {
+      "slug": "operator",
+      "name": "Consortium Operator",
+      "validator": "0xccd0411dc98b577eeac63f1b7fff59c7939fbce4",
+      "account": "0x9d6748578009e008E12FD218DD5c9A2705e95974",
+      "enode": "enode://85af8c8be89c00f12463da2018e83ad6298df2d8b7ad7c52ec815afcda8defb3b1c6cd9ead7dfbc156904bb7e315edf7de3b20176dd5a48a44f14f7bc6ebf37f@172.29.0.14:30303"
+    }
+  ]
+}

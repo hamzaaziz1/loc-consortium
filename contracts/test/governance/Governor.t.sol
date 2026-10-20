@@ -230,6 +230,104 @@ contract GovernorTest is Test {
         assertTrue(governor.proposal(id).cancelled);
     }
 
+    // --- replacing the governor ------------------------------------------------
+
+    /// @dev The property the whole two-layer split depends on. The registry
+    ///      and the validator view are permanent because QBFT reads the view
+    ///      at an address fixed in the genesis. The governor is replaceable
+    ///      because process rules are what change. Without this path a buggy
+    ///      governor is permanent and the registry's validator floor protects
+    ///      nothing, because there would be no way to replace the thing it is
+    ///      protecting against.
+    function test_governanceCanBeReplacedByVote() public {
+        Governor next =
+            new Governor(address(registry), VOTING_PERIOD, EXECUTION_DELAY, EXECUTION_WINDOW);
+
+        vm.prank(aImporter);
+        uint256 id = governor.propose(
+            Governor.Kind.TransferGovernance, bytes32(0), abi.encode(address(next))
+        );
+        vm.prank(aExporter);
+        governor.vote(id);
+        vm.prank(aLogistics);
+        governor.vote(id);
+
+        (uint64 from,) = governor.executionWindowOf(id);
+        assertEq(from, governor.proposal(id).passedAt + EXECUTION_DELAY, "transfers wait");
+
+        vm.roll(from);
+        governor.execute(id);
+
+        assertEq(registry.governor(), address(next));
+    }
+
+    function test_replacedGovernorCanNoLongerWrite() public {
+        Governor next =
+            new Governor(address(registry), VOTING_PERIOD, EXECUTION_DELAY, EXECUTION_WINDOW);
+        vm.prank(aImporter);
+        uint256 id = governor.propose(
+            Governor.Kind.TransferGovernance, bytes32(0), abi.encode(address(next))
+        );
+        vm.prank(aExporter);
+        governor.vote(id);
+        vm.prank(aLogistics);
+        governor.vote(id);
+        (uint64 from,) = governor.executionWindowOf(id);
+        vm.roll(from);
+        governor.execute(id);
+
+        // A proposal carried by the old governor can no longer reach the
+        // registry, which is what "replaced" has to mean.
+        uint256 stale = _proposeStatus(aExporter, IMPORTER, IMemberRegistry.Status.Suspended);
+        vm.prank(aLogistics);
+        governor.vote(stale);
+        (uint64 staleFrom,) = governor.executionWindowOf(stale);
+        vm.roll(staleFrom);
+        vm.expectRevert(
+            abi.encodeWithSelector(IMemberRegistry.NotGovernor.selector, address(governor))
+        );
+        governor.execute(stale);
+
+        // The new one works.
+        vm.prank(aExporter);
+        uint256 fresh = next.propose(
+            Governor.Kind.SetStatus, IMPORTER, abi.encode(IMemberRegistry.Status.Suspended)
+        );
+        vm.prank(aLogistics);
+        next.vote(fresh);
+        (uint64 freshFrom,) = next.executionWindowOf(fresh);
+        vm.roll(freshFrom);
+        next.execute(fresh);
+        assertEq(uint8(registry.member(IMPORTER).status), uint8(IMemberRegistry.Status.Suspended));
+    }
+
+    function test_transferNeedsMajorityOfAll() public {
+        Governor next =
+            new Governor(address(registry), VOTING_PERIOD, EXECUTION_DELAY, EXECUTION_WINDOW);
+        vm.prank(aImporter);
+        uint256 id = governor.propose(
+            Governor.Kind.TransferGovernance, bytes32(0), abi.encode(address(next))
+        );
+        vm.prank(aExporter);
+        governor.vote(id);
+        assertEq(governor.proposal(id).passedAt, 0, "two of four is not a majority");
+    }
+
+    function test_cannotTransferToNowhere() public {
+        vm.prank(aImporter);
+        uint256 id =
+            governor.propose(Governor.Kind.TransferGovernance, bytes32(0), abi.encode(address(0)));
+        vm.prank(aExporter);
+        governor.vote(id);
+        vm.prank(aLogistics);
+        governor.vote(id);
+        (uint64 from,) = governor.executionWindowOf(id);
+        vm.roll(from);
+        vm.expectRevert(Governor.BadParameters.selector);
+        governor.execute(id);
+        assertEq(registry.governor(), address(governor), "governance is unchanged");
+    }
+
     // --- fuzz --------------------------------------------------------------------
 
     function testFuzz_onlyMemberAccountsCanPropose(address caller) public {

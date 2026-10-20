@@ -51,7 +51,20 @@ contract Governor {
         AddAccount,
         RemoveAccount,
         AddEnode,
-        RemoveEnode
+        RemoveEnode,
+        /// @dev Replaces the contract that governs the registry. The reason
+        ///      the registry is permanent and the governor is not: process
+        ///      rules are the part most likely to need changing, while the
+        ///      address QBFT reads validators from is fixed in the genesis and
+        ///      cannot move without a coordinated restart of every node.
+        ///
+        ///      Without this, a governor with a bug in it is permanent, and
+        ///      the only escape is a new registry, which means a new validator
+        ///      view, which means a second genesis transition across every
+        ///      organisation. The validator floor living in the registry (see
+        ///      MemberRegistry) only buys anything if a bad governor can
+        ///      actually be replaced.
+        TransferGovernance
     }
 
     struct Proposal {
@@ -232,7 +245,13 @@ contract Governor {
 
     /// @dev Only proposals that reduce a member's standing wait. Everything
     ///      else is executable the moment it passes.
+    ///
+    ///      Transferring governance waits too, and for the same reason rather
+    ///      than by analogy: handing control of membership to a different
+    ///      contract is the most consequential act available here, so the
+    ///      other members get a window to notice it passing.
     function _reducesStanding(Proposal storage p) private view returns (bool) {
+        if (p.kind == Kind.TransferGovernance) return true;
         if (p.kind == Kind.SetStatus) {
             IMemberRegistry.Status next = abi.decode(p.payload, (IMemberRegistry.Status));
             return next != IMemberRegistry.Status.Active;
@@ -271,6 +290,10 @@ contract Governor {
             REGISTRY.addEnode(p.subject, abi.decode(p.payload, (string)));
         } else if (p.kind == Kind.RemoveEnode) {
             REGISTRY.removeEnode(p.subject, abi.decode(p.payload, (uint256)));
+        } else if (p.kind == Kind.TransferGovernance) {
+            address next = abi.decode(p.payload, (address));
+            if (next == address(0) || next == address(this)) revert BadParameters();
+            REGISTRY.transferGovernance(next);
         } else {
             revert BadParameters();
         }

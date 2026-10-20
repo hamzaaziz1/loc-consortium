@@ -33,12 +33,21 @@ import { IMemberRegistry } from "../src/interfaces/IMemberRegistry.sol";
 contract Deploy is Script {
     using stdJson for string;
 
-    /// @dev Blocks. At two-second blocks: ~2h voting, ~20m delay, ~4h window.
-    ///      Short enough to demonstrate, long enough to be defensible. A real
-    ///      consortium would measure the voting period in days.
-    uint64 internal constant VOTING_PERIOD = 3600;
-    uint64 internal constant EXECUTION_DELAY = 600;
-    uint64 internal constant EXECUTION_WINDOW = 7200;
+    /// @dev Governance timings, in blocks. At two-second blocks the defaults
+    ///      are roughly two hours of voting, twenty minutes of delay before a
+    ///      reduction in standing executes, and a four hour execution window.
+    ///      Defensible for a consortium; tedious for a rehearsal, where a
+    ///      twenty minute wait makes a full governance cycle impractical to
+    ///      exercise.
+    ///
+    ///      Overridable so staging can run the same code on short timings.
+    ///      Environment rather than a constant, so there is no second contract
+    ///      and no "test build" that differs from what is deployed.
+    function _timings() internal view returns (uint64 voting, uint64 delay, uint64 window) {
+        voting = uint64(vm.envOr("GOV_VOTING_PERIOD", uint256(3600)));
+        delay = uint64(vm.envOr("GOV_EXECUTION_DELAY", uint256(600)));
+        window = uint64(vm.envOr("GOV_EXECUTION_WINDOW", uint256(7200)));
+    }
 
     struct Founding {
         string slug;
@@ -56,8 +65,8 @@ contract Deploy is Script {
 
         MemberRegistry registry = new MemberRegistry(msg.sender);
         ValidatorSetView validatorView = new ValidatorSetView(address(registry));
-        Governor governor =
-            new Governor(address(registry), VOTING_PERIOD, EXECUTION_DELAY, EXECUTION_WINDOW);
+        (uint64 voting, uint64 delay, uint64 window) = _timings();
+        Governor governor = new Governor(address(registry), voting, delay, window);
 
         for (uint256 i = 0; i < members.length; ++i) {
             address[] memory accounts = new address[](1);
@@ -89,6 +98,9 @@ contract Deploy is Script {
         console.log("MemberRegistry   ", address(registry));
         console.log("ValidatorSetView ", address(validatorView));
         console.log("Governor         ", address(governor));
+        console.log("  voting period  ", voting);
+        console.log("  execution delay", delay);
+        console.log("  execution window", window);
         console.log("");
         console.log("Put this address in the genesis transitions block:");
         console.log("  validatorcontractaddress =", address(validatorView));
@@ -96,8 +108,17 @@ contract Deploy is Script {
         _verify(registry, validatorView, governor, members);
     }
 
+    /// @dev The config path comes from the environment rather than being
+    ///      hardcoded. A script that always reads the same file can be
+    ///      pointed at the wrong chain while loading the right config, which
+    ///      is a quiet way to seed one consortium with another's members.
+    ///      Requiring LOC_ENV means the chain and the config are chosen by the
+    ///      same variable.
     function _readConfig() internal view returns (Founding[] memory out) {
-        string memory json = vm.readFile("../network/config/deploy.json");
+        string memory env = vm.envOr("LOC_ENV", string("local"));
+        string memory path = string.concat("../network/config/", env, "/deploy.json");
+        console.log("config:", path);
+        string memory json = vm.readFile(path);
         uint256 n = json.readUint(".count");
         out = new Founding[](n);
         for (uint256 i = 0; i < n; ++i) {
