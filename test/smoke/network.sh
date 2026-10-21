@@ -73,6 +73,25 @@ EXPECTED_PEERS=$(( NODE_COUNT - 1 ))
 # failing every subsequent check as if it disagreed about something.
 declare -a REACHABLE
 
+# Wait for the first node to answer before asserting anything. Nothing in this
+# stack waits for what it depends on: a node is "healthy" to Docker before its
+# RPC listener is up, and CI runners are slower than a laptop. Without this the
+# suite fails on timing and the output looks identical to a broken network.
+echo "0. waiting for the network to answer"
+READY=0
+for _ in $(seq 1 30); do
+  if [[ -n "$(rpc_result eth_chainId '[]' "${ADDR_NODES[0]}" "${ADDR_RPC_PORTS[0]}")" ]]; then
+    READY=1
+    break
+  fi
+  sleep 2
+done
+if [[ "$READY" -eq 1 ]]; then
+  ok "${ADDR_NODES[0]} answered"
+else
+  bad "no node answered within 60s"
+fi
+
 echo "1. every node answers over mutual TLS and is on the right chain"
 for i in "${!ADDR_NODES[@]}"; do
   node="${ADDR_NODES[$i]}"; port="${ADDR_RPC_PORTS[$i]}"

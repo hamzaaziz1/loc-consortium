@@ -93,6 +93,14 @@ up: ## start the consortium network
 down: ## stop the network and remove volumes
 	@$(COMPOSE) down -v
 
+.PHONY: restart
+restart: ## restart every node, required after any genesis change
+	@echo "restarting $(LOC_ENV) so nodes reread the genesis..."
+	@$(COMPOSE) restart
+	@echo "waiting for the network to answer"
+	@bash test/smoke/network.sh >/dev/null 2>&1 || true
+	@bash test/smoke/network.sh | tail -3
+
 .PHONY: ps
 ps: ## show node status
 	@$(COMPOSE) ps
