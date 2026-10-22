@@ -6,48 +6,37 @@ import { console } from "forge-std/console.sol";
 import { stdJson } from "forge-std/StdJson.sol";
 import { MemberRegistry } from "../src/governance/MemberRegistry.sol";
 import { ValidatorSetView } from "../src/governance/ValidatorSetView.sol";
+import { InfrastructureRegistry } from "../src/governance/InfrastructureRegistry.sol";
 import { Governor } from "../src/governance/Governor.sol";
-import { IMemberRegistry } from "../src/interfaces/IMemberRegistry.sol";
+import { LetterOfCreditFactory } from "../src/loc/LetterOfCreditFactory.sol";
 
 /// @title Deploy
-/// @notice Deploys governance and seeds the founding consortium.
+/// @notice Deploys the full stack and seeds the founding consortium.
 ///
-/// @dev The sequence matters, and the awkward part is the bootstrap: the
-///      founding members cannot be added by vote, because there is no
-///      electorate until the first member exists. So the deployer holds
-///      governance briefly, seeds the founding four, and hands over.
+/// @dev For a fresh environment. To add the newer contracts to an environment
+///      that already has a MemberRegistry fixed in its genesis transition, use
+///      DeployGovernorUpgrade instead: redeploying the registry would mean a
+///      new ValidatorSetView, a new genesis transition and a coordinated
+///      restart of every node.
 ///
-///      THE DEPLOYER MUST END UP WITH NOTHING. The final transfer is the
-///      whole point of the script, and `verify()` asserts it afterwards
-///      rather than trusting that it happened.
+///      The awkward part is the bootstrap. Founding members cannot be added by
+///      vote because there is no electorate until the first member exists, and
+///      the factory pointer cannot be set by vote for the same reason. So the
+///      deployer holds governance briefly, seeds both, and hands over.
+///
+///      THE DEPLOYER MUST END UP WITH NOTHING, which `_verify` asserts rather
+///      than assumes: a deployment that silently left the deployer in control
+///      would look identical to a correct one.
 ///
 ///      Run (from contracts/):
-///        forge script script/Deploy.s.sol:Deploy \
-///          --rpc-url http://127.0.0.1:8600 \
-///          --private-key $DEPLOYER_KEY \
+///        LOC_ENV=local forge script script/Deploy.s.sol:Deploy \
+///          --rpc-url http://127.0.0.1:8600 --private-key $KEY \
 ///          --broadcast --legacy --gas-price 0
-///
-///      The RPC URL is the local terminating proxy, not a node: Foundry
-///      cannot present a client certificate and every endpoint requires one.
-///      See ADR 0005.
 contract Deploy is Script {
     using stdJson for string;
 
-    /// @dev Governance timings, in blocks. At two-second blocks the defaults
-    ///      are roughly two hours of voting, twenty minutes of delay before a
-    ///      reduction in standing executes, and a four hour execution window.
-    ///      Defensible for a consortium; tedious for a rehearsal, where a
-    ///      twenty minute wait makes a full governance cycle impractical to
-    ///      exercise.
-    ///
-    ///      Overridable so staging can run the same code on short timings.
-    ///      Environment rather than a constant, so there is no second contract
-    ///      and no "test build" that differs from what is deployed.
-    function _timings() internal view returns (uint64 voting, uint64 delay, uint64 window) {
-        voting = uint64(vm.envOr("GOV_VOTING_PERIOD", uint256(3600)));
-        delay = uint64(vm.envOr("GOV_EXECUTION_DELAY", uint256(600)));
-        window = uint64(vm.envOr("GOV_EXECUTION_WINDOW", uint256(7200)));
-    }
+    /// @notice Well-known key for the consortium's letter of credit factory.
+    bytes32 public constant LOC_FACTORY_KEY = keccak256("loc-factory");
 
     struct Founding {
         string slug;
@@ -55,6 +44,12 @@ contract Deploy is Script {
         address validator;
         address account;
         string enode;
+    }
+
+    function _timings() internal view returns (uint64 voting, uint64 delay, uint64 window) {
+        voting = uint64(vm.envOr("GOV_VOTING_PERIOD", uint256(3600)));
+        delay = uint64(vm.envOr("GOV_EXECUTION_DELAY", uint256(600)));
+        window = uint64(vm.envOr("GOV_EXECUTION_WINDOW", uint256(7200)));
     }
 
     function run() external {
@@ -65,8 +60,13 @@ contract Deploy is Script {
 
         MemberRegistry registry = new MemberRegistry(msg.sender);
         ValidatorSetView validatorView = new ValidatorSetView(address(registry));
+        InfrastructureRegistry infrastructure = new InfrastructureRegistry(address(registry));
+
         (uint64 voting, uint64 delay, uint64 window) = _timings();
-        Governor governor = new Governor(address(registry), voting, delay, window);
+        Governor governor =
+            new Governor(address(registry), address(infrastructure), voting, delay, window);
+
+        LetterOfCreditFactory factory = new LetterOfCreditFactory(address(registry));
 
         for (uint256 i = 0; i < members.length; ++i) {
             address[] memory accounts = new address[](1);
@@ -84,36 +84,28 @@ contract Deploy is Script {
             );
         }
 
-        // Closes the permissive window that exists only because a network
-        // necessarily passes through one and two validators on its way to
-        // four. After this the validator floor is unconditional.
         registry.endFoundingPhase();
 
-        // The handover. From here the deployer cannot write to the registry
-        // and every change must pass a vote.
+        // Seeded before the handover for the same reason the members are: there
+        // is no electorate yet. Afterwards this is a governance vote.
+        infrastructure.set(LOC_FACTORY_KEY, address(factory));
+
         registry.transferGovernance(address(governor));
 
         vm.stopBroadcast();
 
-        console.log("MemberRegistry   ", address(registry));
-        console.log("ValidatorSetView ", address(validatorView));
-        console.log("Governor         ", address(governor));
-        console.log("  voting period  ", voting);
-        console.log("  execution delay", delay);
-        console.log("  execution window", window);
+        console.log("MemberRegistry        ", address(registry));
+        console.log("ValidatorSetView      ", address(validatorView));
+        console.log("InfrastructureRegistry", address(infrastructure));
+        console.log("Governor              ", address(governor));
+        console.log("LetterOfCreditFactory ", address(factory));
         console.log("");
         console.log("Put this address in the genesis transitions block:");
         console.log("  validatorcontractaddress =", address(validatorView));
 
-        _verify(registry, validatorView, governor, members);
+        _verify(registry, validatorView, infrastructure, governor, factory, members);
     }
 
-    /// @dev The config path comes from the environment rather than being
-    ///      hardcoded. A script that always reads the same file can be
-    ///      pointed at the wrong chain while loading the right config, which
-    ///      is a quiet way to seed one consortium with another's members.
-    ///      Requiring LOC_ENV means the chain and the config are chosen by the
-    ///      same variable.
     function _readConfig() internal view returns (Founding[] memory out) {
         string memory env = vm.envOr("LOC_ENV", string("local"));
         string memory path = string.concat("../network/config/", env, "/deploy.json");
@@ -133,12 +125,12 @@ contract Deploy is Script {
         }
     }
 
-    /// @dev Asserted rather than assumed. A deployment that silently left the
-    ///      deployer in control would look identical to a correct one.
     function _verify(
         MemberRegistry registry,
         ValidatorSetView validatorView,
+        InfrastructureRegistry infrastructure,
         Governor governor,
+        LetterOfCreditFactory factory,
         Founding[] memory members
     ) internal view {
         require(registry.governor() == address(governor), "governance was not handed over");
@@ -150,6 +142,11 @@ contract Deploy is Script {
         require(
             registry.activeMemberCount() == members.length, "not every member was seeded active"
         );
+        require(
+            infrastructure.get(LOC_FACTORY_KEY) == address(factory),
+            "the factory pointer was not recorded"
+        );
+        require(address(factory.REGISTRY()) == address(registry), "factory points elsewhere");
         for (uint256 i = 0; i < members.length; ++i) {
             require(
                 registry.isAccountAllowed(members[i].account),

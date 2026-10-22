@@ -31,3 +31,4 @@ network/genesis/.generated/
 network/config/static-nodes.json
 network/compose/compose.addressing.yml
 network/config/deploy.json
+network/config/*/terms/

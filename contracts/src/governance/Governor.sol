@@ -3,6 +3,10 @@ pragma solidity 0.8.28;
 
 import { IMemberRegistry } from "../interfaces/IMemberRegistry.sol";
 
+interface IInfrastructureRegistry {
+    function set(bytes32 key, address value) external;
+}
+
 /// @title Governor
 /// @notice Proposal, vote and execution for consortium membership changes.
 ///
@@ -64,7 +68,13 @@ contract Governor {
         ///      organisation. The validator floor living in the registry (see
         ///      MemberRegistry) only buys anything if a bad governor can
         ///      actually be replaced.
-        TransferGovernance
+        TransferGovernance,
+        /// @dev Points a well-known key in the InfrastructureRegistry at a
+        ///      contract: which letter of credit factory is the consortium's,
+        ///      and later which document store. Governed because an
+        ///      application trusting the wrong factory would accept forged
+        ///      credits as genuine.
+        SetInfrastructure
     }
 
     struct Proposal {
@@ -101,6 +111,11 @@ contract Governor {
 
     IMemberRegistry public immutable REGISTRY;
 
+    /// @notice Where well-known contract addresses are recorded. Separate from
+    ///         the member registry because that contract can never practically
+    ///         be replaced and must stay minimal.
+    IInfrastructureRegistry public immutable INFRASTRUCTURE;
+
     /// @notice Blocks a proposal stays open for voting.
     uint64 public immutable VOTING_PERIOD;
     /// @notice Blocks between a reduction in standing passing and becoming
@@ -116,11 +131,15 @@ contract Governor {
 
     constructor(
         address registry,
+        address infrastructure,
         uint64 votingPeriod,
         uint64 executionDelay,
         uint64 executionWindow
     ) {
-        if (registry == address(0)) revert BadParameters();
+        if (registry == address(0) || infrastructure == address(0)) {
+            revert BadParameters();
+        }
+        INFRASTRUCTURE = IInfrastructureRegistry(infrastructure);
         if (votingPeriod == 0 || executionWindow == 0) revert BadParameters();
         REGISTRY = IMemberRegistry(registry);
         VOTING_PERIOD = votingPeriod;
@@ -252,6 +271,11 @@ contract Governor {
     ///      other members get a window to notice it passing.
     function _reducesStanding(Proposal storage p) private view returns (bool) {
         if (p.kind == Kind.TransferGovernance) return true;
+        // Repointing infrastructure waits as well. An application that has
+        // cached the old factory address keeps trusting it until it re-reads,
+        // so the other members get a window to notice a hostile proposal
+        // passing before anything downstream changes.
+        if (p.kind == Kind.SetInfrastructure) return true;
         if (p.kind == Kind.SetStatus) {
             IMemberRegistry.Status next = abi.decode(p.payload, (IMemberRegistry.Status));
             return next != IMemberRegistry.Status.Active;
@@ -290,6 +314,9 @@ contract Governor {
             REGISTRY.addEnode(p.subject, abi.decode(p.payload, (string)));
         } else if (p.kind == Kind.RemoveEnode) {
             REGISTRY.removeEnode(p.subject, abi.decode(p.payload, (uint256)));
+        } else if (p.kind == Kind.SetInfrastructure) {
+            (bytes32 key, address value) = abi.decode(p.payload, (bytes32, address));
+            INFRASTRUCTURE.set(key, value);
         } else if (p.kind == Kind.TransferGovernance) {
             address next = abi.decode(p.payload, (address));
             if (next == address(0) || next == address(this)) revert BadParameters();

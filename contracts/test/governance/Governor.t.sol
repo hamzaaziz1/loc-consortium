@@ -5,9 +5,11 @@ import { Test } from "forge-std/Test.sol";
 import { MemberRegistry } from "../../src/governance/MemberRegistry.sol";
 import { Governor } from "../../src/governance/Governor.sol";
 import { IMemberRegistry } from "../../src/interfaces/IMemberRegistry.sol";
+import { InfrastructureRegistry } from "../../src/governance/InfrastructureRegistry.sol";
 
 contract GovernorTest is Test {
     MemberRegistry internal registry;
+    InfrastructureRegistry internal infrastructure;
     Governor internal governor;
 
     address internal deployer = address(0xA0);
@@ -29,7 +31,14 @@ contract GovernorTest is Test {
 
     function setUp() public {
         registry = new MemberRegistry(deployer);
-        governor = new Governor(address(registry), VOTING_PERIOD, EXECUTION_DELAY, EXECUTION_WINDOW);
+        infrastructure = new InfrastructureRegistry(address(registry));
+        governor = new Governor(
+            address(registry),
+            address(infrastructure),
+            VOTING_PERIOD,
+            EXECUTION_DELAY,
+            EXECUTION_WINDOW
+        );
 
         _seed(IMPORTER, "Importer Bank", address(0x11), aImporter);
         _seed(EXPORTER, "Exporter Bank", address(0x12), aExporter);
@@ -240,8 +249,13 @@ contract GovernorTest is Test {
     ///      nothing, because there would be no way to replace the thing it is
     ///      protecting against.
     function test_governanceCanBeReplacedByVote() public {
-        Governor next =
-            new Governor(address(registry), VOTING_PERIOD, EXECUTION_DELAY, EXECUTION_WINDOW);
+        Governor next = new Governor(
+            address(registry),
+            address(infrastructure),
+            VOTING_PERIOD,
+            EXECUTION_DELAY,
+            EXECUTION_WINDOW
+        );
 
         vm.prank(aImporter);
         uint256 id = governor.propose(
@@ -262,8 +276,13 @@ contract GovernorTest is Test {
     }
 
     function test_replacedGovernorCanNoLongerWrite() public {
-        Governor next =
-            new Governor(address(registry), VOTING_PERIOD, EXECUTION_DELAY, EXECUTION_WINDOW);
+        Governor next = new Governor(
+            address(registry),
+            address(infrastructure),
+            VOTING_PERIOD,
+            EXECUTION_DELAY,
+            EXECUTION_WINDOW
+        );
         vm.prank(aImporter);
         uint256 id = governor.propose(
             Governor.Kind.TransferGovernance, bytes32(0), abi.encode(address(next))
@@ -302,8 +321,13 @@ contract GovernorTest is Test {
     }
 
     function test_transferNeedsMajorityOfAll() public {
-        Governor next =
-            new Governor(address(registry), VOTING_PERIOD, EXECUTION_DELAY, EXECUTION_WINDOW);
+        Governor next = new Governor(
+            address(registry),
+            address(infrastructure),
+            VOTING_PERIOD,
+            EXECUTION_DELAY,
+            EXECUTION_WINDOW
+        );
         vm.prank(aImporter);
         uint256 id = governor.propose(
             Governor.Kind.TransferGovernance, bytes32(0), abi.encode(address(next))
@@ -326,6 +350,105 @@ contract GovernorTest is Test {
         vm.expectRevert(Governor.BadParameters.selector);
         governor.execute(id);
         assertEq(registry.governor(), address(governor), "governance is unchanged");
+    }
+
+    // --- infrastructure -------------------------------------------------------
+
+    /// @dev Closes a real gap: an application asking whether an address is a
+    ///      genuine letter of credit calls `factory.isCredit`, which only means
+    ///      anything if everyone agrees which factory. Without this, the
+    ///      factory address is out-of-band configuration and a member could
+    ///      deploy its own and issue credits that look identical.
+    function test_infrastructureIsSetByVote() public {
+        bytes32 key = keccak256("loc-factory");
+        address factory = address(0xFACE);
+
+        vm.prank(aImporter);
+        uint256 id = governor.propose(
+            Governor.Kind.SetInfrastructure, bytes32(0), abi.encode(key, factory)
+        );
+        vm.prank(aExporter);
+        governor.vote(id);
+        vm.prank(aLogistics);
+        governor.vote(id);
+
+        (uint64 from,) = governor.executionWindowOf(id);
+        assertEq(from, governor.proposal(id).passedAt + EXECUTION_DELAY, "repointing waits");
+
+        vm.roll(from);
+        governor.execute(id);
+        assertEq(infrastructure.get(key), factory);
+    }
+
+    function test_infrastructureCannotBeSetDirectly() public {
+        vm.prank(aImporter);
+        vm.expectRevert(
+            abi.encodeWithSelector(InfrastructureRegistry.NotGovernor.selector, aImporter)
+        );
+        infrastructure.set(keccak256("loc-factory"), address(0xFACE));
+    }
+
+    /// @dev The infrastructure registry reads its authority from the member
+    ///      registry rather than storing it, so replacing the Governor carries
+    ///      over with no second transfer and nothing to drift.
+    function test_infrastructureFollowsGovernanceReplacement() public {
+        Governor next = new Governor(
+            address(registry),
+            address(infrastructure),
+            VOTING_PERIOD,
+            EXECUTION_DELAY,
+            EXECUTION_WINDOW
+        );
+        vm.prank(aImporter);
+        uint256 id = governor.propose(
+            Governor.Kind.TransferGovernance, bytes32(0), abi.encode(address(next))
+        );
+        vm.prank(aExporter);
+        governor.vote(id);
+        vm.prank(aLogistics);
+        governor.vote(id);
+        (uint64 from,) = governor.executionWindowOf(id);
+        vm.roll(from);
+        governor.execute(id);
+
+        bytes32 key = keccak256("loc-factory");
+        vm.prank(aExporter);
+        uint256 fresh = next.propose(
+            Governor.Kind.SetInfrastructure, bytes32(0), abi.encode(key, address(0xBEEF))
+        );
+        vm.prank(aLogistics);
+        next.vote(fresh);
+        vm.prank(aOperator);
+        next.vote(fresh);
+        (uint64 freshFrom,) = next.executionWindowOf(fresh);
+        vm.roll(freshFrom);
+        next.execute(fresh);
+
+        assertEq(infrastructure.get(key), address(0xBEEF));
+
+        // And the replaced governor can no longer reach it.
+        vm.prank(aImporter);
+        uint256 stale = governor.propose(
+            Governor.Kind.SetInfrastructure, bytes32(0), abi.encode(key, address(0xDEAD))
+        );
+        vm.prank(aExporter);
+        governor.vote(stale);
+        vm.prank(aLogistics);
+        governor.vote(stale);
+        (uint64 staleFrom,) = governor.executionWindowOf(stale);
+        vm.roll(staleFrom);
+        vm.expectRevert(
+            abi.encodeWithSelector(InfrastructureRegistry.NotGovernor.selector, address(governor))
+        );
+        governor.execute(stale);
+    }
+
+    function test_unknownInfrastructureKeyReverts() public {
+        vm.expectRevert(
+            abi.encodeWithSelector(InfrastructureRegistry.UnknownEntry.selector, keccak256("nope"))
+        );
+        infrastructure.get(keccak256("nope"));
+        assertEq(infrastructure.tryGet(keccak256("nope")), address(0));
     }
 
     // --- fuzz --------------------------------------------------------------------
