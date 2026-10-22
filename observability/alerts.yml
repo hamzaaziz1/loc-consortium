@@ -1,0 +1,154 @@
+# Alerts for things this project has established are dangerous, rather than
+# things Prometheus examples alert on. Each rule cites the decision that asked
+# for it; an alert with no owning decision tends to be an alert nobody acts on.
+#
+# Every expression below was written against the metrics Besu 26.8.1 actually
+# exposes, checked by scraping a running node. An earlier draft of this file
+# referenced besu_blockchain_height, besu_consensus_validator_count and
+# besu_consensus_round_changes_total. None of those exist. An alert on a metric
+# that does not exist never fires, which is worse than no alert because it
+# looks like coverage.
+
+groups:
+  - name: consensus
+    rules:
+      - alert: ChainNotAdvancing
+        # The failure QBFT is notorious for: every container healthy, every log
+        # quiet, and no blocks.
+        #
+        # Measured as staleness of the chain head timestamp rather than a delta
+        # in height, because Besu exposes no height gauge and because staleness
+        # is the better question anyway: "how old is the tip" rather than "how
+        # much did it move in an arbitrary window".
+        expr: time() - besu_blockchain_chain_head_timestamp > 60
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "{{ $labels.node }} chain head is {{ $value | humanizeDuration }} old"
+          description: >-
+            Blocks are produced every two seconds. A head older than a minute
+            means consensus has stalled or this node is isolated. If every node
+            reports it, consensus has stalled: see the stalled-round recovery
+            procedure in the runbook.
+
+      - alert: NodeOutOfSync
+        expr: besu_synchronizer_in_sync == 0
+        for: 2m
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $labels.node }} reports itself out of sync"
+
+      - alert: PeerCountLow
+        # Derived from the connect and disconnect counters. Besu has no current
+        # peer gauge: besu_peers_peer_count_by_client looks like one and is
+        # not, as it counts only peers whose client string was identified and
+        # under-reports against net_peerCount.
+        expr: besu_peers_connected_total - besu_peers_disconnected_total < 5
+        for: 3m
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $labels.node }} has {{ $value }} peers, expected five"
+          description: >-
+            A node that is up but isolated produces no error anywhere. With
+            node permissioning enabled, check whether the allowlist is
+            excluding it before assuming a network fault.
+
+  - name: permissioning
+    rules:
+      - alert: UnpermittedNodeConnectionAttempts
+        # The security event rather than the plumbing: something tried to
+        # connect and the allowlist refused it. Expected to be zero in a
+        # healthy consortium, so any occurrence is worth a look.
+        expr: increase(besu_permissioning_node_local_check_count_unpermitted_total[5m]) > 0
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $labels.node }} refused {{ $value }} node connections in five minutes"
+          description: >-
+            Either a removed member is still trying to connect, which is the
+            system working, or a legitimate node has fallen off the allowlist,
+            which is not. Compare against the registry before concluding.
+
+      - alert: UnpermittedAccountTransactions
+        expr: increase(besu_permissioning_account_local_check_count_unpermitted_total[5m]) > 0
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $labels.node }} refused {{ $value }} transactions in five minutes"
+          description: >-
+            An account not on the allowlist attempted to transact. Note the
+            deployer and operator service accounts are allowlisted from static
+            configuration rather than by vote (ADR 0006), so a legitimate tool
+            whose account was never added would appear here.
+
+      - alert: PermissioningControllerStale
+        # ADR 0006: the controller fails open, so a dead controller is
+        # invisible from the network's behaviour. The heartbeat is the only way
+        # to notice. The timestamp deliberately does not advance on a failed
+        # pass, so a controller that is running but failing every pass alerts
+        # the same as one that is dead.
+        expr: time() - permissioning_controller_last_reconcile_timestamp_seconds > 120
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "the permissioning controller has not reconciled for two minutes"
+          description: >-
+            Membership decided by governance is no longer reaching the nodes.
+            The network keeps running on a stale allowlist, so nothing else
+            will report this. A member removed by vote may still be able to
+            connect.
+
+      - alert: PermissioningReloadFailing
+        expr: permissioning_controller_failed_reloads > 0
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $value }} nodes rejected the permissions reload"
+          description: >-
+            Those nodes are enforcing an older allowlist than the registry
+            says. Besu rejects a malformed file wholesale, so their previous
+            allowlist is intact rather than absent.
+
+  - name: pki
+    rules:
+      - alert: CertificateExpiringSoon
+        # ADR 0004 named this. Eleven certificates rotate annually by hand and
+        # the failure mode is the network stopping with no warning beyond
+        # expiry dates nobody is watching.
+        expr: consortium_certificate_expiry_days < 30
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $labels.certificate }} expires in {{ $value }} days"
+
+      - alert: CertificateExpiringImminently
+        expr: consortium_certificate_expiry_days < 7
+        labels: { severity: critical }
+        annotations:
+          summary: "{{ $labels.certificate }} expires in {{ $value }} days"
+          description: >-
+            When a node certificate expires its RPC endpoint stops accepting
+            clients, and Besu logs nothing when it rejects every client
+            (ADR 0005). Rotate before this becomes an outage with no symptom.
+
+      - alert: CertificateMetricsStale
+        # If the textfile stops being written, expiry monitoring silently
+        # stops. The absence of an alert is not evidence of health.
+        expr: time() - consortium_certificate_metrics_timestamp_seconds > 7200
+        labels: { severity: warning }
+        annotations:
+          summary: "certificate expiry metrics have not been refreshed for two hours"
+
+# NOT MONITORED, and deliberately recorded as such.
+#
+# Validator set membership and QBFT round changes cannot be observed from node
+# metrics on Besu 26.8.1: the client exposes no consensus metrics beyond thread
+# pool statistics for the BFT timer executor. There is no validator count, no
+# round change counter and no proposer information.
+#
+# Round changes in particular are the leading indicator of a stall rather than
+# a symptom of one, so losing them matters. ChainNotAdvancing fires after the
+# stall instead of before it.
+#
+# What covers the gap today: test/smoke/network.sh asserts that every node
+# agrees on the validator set and that it matches the genesis, and it can be
+# run on a timer. A proper fix is a small exporter doing eth_call against
+# ValidatorSetView and comparing across nodes, which is m9 work rather than
+# something to fake here.

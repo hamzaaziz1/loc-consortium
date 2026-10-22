@@ -187,20 +187,6 @@ services:
       consortium: {}
 
   # --- permissioning controller ----------------------------------------------
-  # Reconciles node and account allowlists against the on-chain MemberRegistry
-  # and reloads them in place.
-  #
-  # Exists because Besu removed its onchain permissioning hook in the 25.6.0
-  # line while keeping file-based permissioning and the PERM API. The registry
-  # is still the authority on membership; only the enforcement point moved off
-  # chain. Validator set changes need none of this, because the QBFT validator
-  # contract hook survived. See ADR 0006.
-  #
-  # Presents the operator's `controller` certificate, the most sensitive
-  # end-entity certificate in the network: holding it is holding the ability to
-  # change who may connect.
-  #
-  # In the `ops` profile because REGISTRY_ADDRESS only exists after deployment.
   permissioning-controller:
     build: ../../services/permissioning-controller
     profiles: ["ops"]
@@ -212,8 +198,8 @@ services:
       INFRASTRUCTURE_ACCOUNTS: ${INFRASTRUCTURE_ACCOUNTS:-}
       INTERVAL_MS: ${CONTROLLER_INTERVAL_MS:-10000}
       HEARTBEAT_FILE: /perm/state/heartbeat.json
+      METRICS_PORT: "9600"
     volumes:
-      # Read-write: the controller is this file's only writer.
       - ../config/${LOC_ENV:-local}/permissions.toml:/perm/permissions.toml
       - ../config/${LOC_ENV:-local}/controller:/perm/state
       - ../pki/out/operator/issued/controller/controller.chain.pem:/certs/client.chain.pem:ro
@@ -222,11 +208,73 @@ services:
     networks:
       consortium: {}
 
+  # --- observability -----------------------------------------------------------
+  # In the ops profile so `make up` stays at the six-node memory budget set in
+  # m2. Observability is opt-in rather than always running.
+
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    profiles: ["ops"]
+    restart: unless-stopped
+    environment:
+      LOC_ENV: ${LOC_ENV:-local}
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=7d
+      # Enough to see a week of certificate expiry trend and a stall; this is a
+      # development stack, not a long-term metrics store.
+      - --web.enable-lifecycle
+    volumes:
+      - ../../observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../../observability/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
+    networks:
+      consortium: {}
+
+  grafana:
+    image: grafana/grafana:11.5.1
+    profiles: ["ops"]
+    restart: unless-stopped
+    environment:
+      # Anonymous admin access, bound to loopback. This is a local development
+      # dashboard; adding credentials here would be security theatre, and the
+      # port binding is the actual control.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_USERS_DEFAULT_THEME: light
+    volumes:
+      - ../../observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../../observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
+    networks:
+      consortium: {}
+
+  # Serves the certificate expiry textfile written by
+  # tools/cert-expiry-metrics.sh. A static file server rather than an exporter,
+  # because reading expiry needs filesystem access to the private CA and
+  # mounting that into a long-running network service would be the wrong trade.
+  cert-metrics:
+    image: nginx:1.27-alpine
+    profiles: ["ops"]
+    restart: unless-stopped
+    volumes:
+      - ../../observability/textfile:/usr/share/nginx/html/metrics:ro
+      - ../../observability/cert-metrics.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      consortium: {}
+
 networks:
   consortium:
     name: loc-${LOC_ENV:-local}
 
 volumes:
+  prometheus-data:
+  grafana-data:
   validator-importer-data:
   validator-exporter-data:
   validator-logistics-data:

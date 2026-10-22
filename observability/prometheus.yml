@@ -1,0 +1,65 @@
+# Prometheus for the consortium.
+#
+# Scrapes the six Besu nodes directly on the metrics port they already expose,
+# plus two things Prometheus cannot see by itself:
+#
+#   the permissioning controller's heartbeat, because it fails open and
+#   therefore fails invisibly (ADR 0006)
+#
+#   certificate expiry, because eleven certificates rotate annually by hand and
+#   the failure mode is the network stopping with no warning (ADR 0004)
+#
+# Node targets use container names rather than the certificate names, because
+# the metrics endpoint is plain HTTP inside the network. Metrics are not
+# behind mutual TLS: they carry no secrets, the network is private, and
+# requiring client certificates here would mean putting an operator identity
+# into Prometheus for no benefit.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    consortium: loc
+    environment: ${LOC_ENV}
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+scrape_configs:
+  - job_name: besu
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - validator-1.importer-bank.loc.consortium:9545
+        labels: { node: validator-1.importer-bank, org: importer-bank, role: validator }
+      - targets:
+          - validator-1.exporter-bank.loc.consortium:9545
+        labels: { node: validator-1.exporter-bank, org: exporter-bank, role: validator }
+      - targets:
+          - validator-1.logistics.loc.consortium:9545
+        labels: { node: validator-1.logistics, org: logistics, role: validator }
+      - targets:
+          - validator-1.operator.loc.consortium:9545
+        labels: { node: validator-1.operator, org: operator, role: validator }
+      - targets:
+          - rpc-1.operator.loc.consortium:9545
+        labels: { node: rpc-1.operator, org: operator, role: rpc }
+      - targets:
+          - rpc-2.operator.loc.consortium:9545
+        labels: { node: rpc-2.operator, org: operator, role: rpc }
+
+  # The controller exposes its own reconciliation state.
+  - job_name: permissioning-controller
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["permissioning-controller:9600"]
+
+  # Certificate expiry, written as a textfile by tools/cert-expiry-metrics.sh
+  # and served by a static file server. A textfile rather than an exporter
+  # because reading certificate expiry needs filesystem access to the PKI, and
+  # mounting the PKI into a long-running network service to read dates would be
+  # the wrong trade.
+  - job_name: certificates
+    metrics_path: /metrics/certificates.prom
+    static_configs:
+      - targets: ["cert-metrics:80"]

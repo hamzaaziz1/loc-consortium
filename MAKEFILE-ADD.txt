@@ -1,0 +1,31 @@
+Add these, and extend the ops profile targets:
+
+PROMETHEUS_PORT_local   := 9090
+PROMETHEUS_PORT_staging := 9190
+PROMETHEUS_PORT := $(PROMETHEUS_PORT_$(LOC_ENV))
+GRAFANA_PORT_local      := 3000
+GRAFANA_PORT_staging    := 3100
+GRAFANA_PORT := $(GRAFANA_PORT_$(LOC_ENV))
+export PROMETHEUS_PORT GRAFANA_PORT
+
+.PHONY: cert-metrics
+cert-metrics: ## refresh certificate expiry metrics
+	@bash tools/cert-expiry-metrics.sh
+
+.PHONY: observability-up
+observability-up: cert-metrics ## start prometheus, grafana and cert metrics
+	@$(COMPOSE) --profile ops up -d prometheus grafana cert-metrics
+	@echo "prometheus http://127.0.0.1:$(PROMETHEUS_PORT)"
+	@echo "grafana    http://127.0.0.1:$(GRAFANA_PORT)"
+
+.PHONY: observability-down
+observability-down: ## stop the observability stack
+	@$(COMPOSE) --profile ops stop prometheus grafana cert-metrics
+
+.PHONY: privacy-test
+privacy-test: ## prove sealed terms are unreadable by non-recipients
+	@bash test/privacy/terms.sh
+
+.PHONY: perm-test
+perm-test: ## prove the permissioning layer enforces membership
+	@bash test/smoke/permissioning.sh

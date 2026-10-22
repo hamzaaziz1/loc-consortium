@@ -5,6 +5,7 @@ const path = require('path');
 const { RpcClient } = require('./rpc');
 const { Registry } = require('./registry');
 const { desiredAllowlists, renderToml, changed } = require('./reconcile');
+const { Metrics } = require('./metrics');
 
 /**
  * Permissioning controller.
@@ -58,6 +59,9 @@ function req(name) {
   }
   return v;
 }
+
+const metrics = new Metrics();
+const METRICS_PORT = Number(process.env.METRICS_PORT || 9600);
 
 function log(...args) {
   console.log(new Date().toISOString(), ...args);
@@ -121,16 +125,23 @@ async function reconcileOnce() {
 
   if (!changed(previous, next)) {
     writeHeartbeat({ block, via, changed: false, members: members.length, active });
+    metrics.recordSuccess({
+      block,
+      members: members.length,
+      active,
+      nodes: desired.nodes.length,
+      accounts: desired.accounts.length,
+      changed: false,
+    });
     return { applied: false, block, desired };
   }
 
-  // Write to a temporary file and rename, so a node reloading concurrently
-  // never reads a half-written file. rename is atomic within a filesystem.
-  // Written in place rather than via a temporary file and rename: the file
+  // Written in place rather than via a temporary file and rename. The file
   // itself is bind-mounted, so replacing the inode would leave every node
-  // reading the old one. A torn read is microseconds wide and Besu rejects a
-  // malformed file wholesale while keeping its previous allowlist, so the
-  // worst case is one rejected reload that the next pass fixes.
+  // reading the old one: the mount is the inode, not the name. A torn read is
+  // microseconds wide, and Besu rejects a malformed file wholesale while
+  // keeping its previous allowlist, so the worst case is one rejected reload
+  // that the next pass fixes.
   fs.writeFileSync(CONFIG.permissionsFile, next);
 
   log(`allowlists changed at block ${block}: ${desired.nodes.length} nodes, ${desired.accounts.length} accounts`);
@@ -153,6 +164,15 @@ async function reconcileOnce() {
 
   const failed = results.filter((r) => r.status === 'rejected').length;
   writeHeartbeat({ block, via, changed: true, members: members.length, active, failedReloads: failed });
+  metrics.recordSuccess({
+    block,
+    members: members.length,
+    active,
+    failedReloads: failed,
+    nodes: desired.nodes.length,
+    accounts: desired.accounts.length,
+    changed: true,
+  });
   return { applied: true, block, desired };
 }
 
@@ -171,6 +191,12 @@ async function main() {
   log(`  registry ${CONFIG.registry}`);
   log(`  nodes    ${CONFIG.nodes.length}`);
   log(`  file     ${CONFIG.permissionsFile}`);
+  log(`  metrics  :${METRICS_PORT}/metrics`);
+
+  // Served before the first reconcile, so a controller that cannot reach any
+  // node is still scrapeable. Its stale reconcile timestamp is precisely the
+  // thing Prometheus needs to see.
+  metrics.serve(METRICS_PORT);
 
   for (;;) {
     try {
@@ -179,6 +205,7 @@ async function main() {
       // Reconciliation is idempotent, so a failed pass costs nothing but time.
       // The heartbeat stops advancing, which is what makes the staleness
       // visible rather than silent.
+      metrics.recordFailure();
       log(`reconcile failed: ${e.message}`);
     }
     await new Promise((r) => setTimeout(r, CONFIG.intervalMs));

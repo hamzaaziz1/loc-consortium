@@ -1,0 +1,380 @@
+{
+  "title": "LoC Consortium",
+  "uid": "loc-consortium",
+  "tags": [
+    "consortium",
+    "besu"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 2,
+  "refresh": "15s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Chain head age",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "time() - besu_blockchain_chain_head_timestamp",
+          "legendFormat": "{{node}}",
+          "refId": "A"
+        }
+      ],
+      "description": "Staleness of the tip. Blocks come every two seconds, so this should sit near zero. Besu exposes no height gauge, and staleness is the better question anyway.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "title": "Peers",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "besu_peers_connected_total - besu_peers_disconnected_total",
+          "legendFormat": "{{node}}",
+          "refId": "A"
+        }
+      ],
+      "description": "Derived from the connect and disconnect counters. besu_peers_peer_count_by_client looks like a peer gauge and is not: it counts only peers whose client string was identified."
+    },
+    {
+      "id": 3,
+      "title": "Blocks (total difficulty)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "besu_blockchain_difficulty",
+          "legendFormat": "{{node}}",
+          "refId": "A"
+        }
+      ],
+      "description": "On this QBFT chain each block adds one to difficulty, so total difficulty tracks height. A convenient proxy rather than a documented guarantee: verify before relying on it after a client upgrade."
+    },
+    {
+      "id": 4,
+      "title": "In sync",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "besu_synchronizer_in_sync",
+          "legendFormat": "{{node}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Refused node connections",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "increase(besu_permissioning_node_local_check_count_unpermitted_total[5m])",
+          "legendFormat": "{{node}}",
+          "refId": "A"
+        }
+      ],
+      "description": "The allowlist rejecting a connection. Expected to be zero. Either a removed member is still trying, which is the system working, or a legitimate node has fallen off the allowlist, which is not."
+    },
+    {
+      "id": 6,
+      "title": "Refused transactions",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "increase(besu_permissioning_account_local_check_count_unpermitted_total[5m])",
+          "legendFormat": "{{node}}",
+          "refId": "A"
+        }
+      ],
+      "description": "An account not on the allowlist attempting to transact."
+    },
+    {
+      "id": 7,
+      "title": "Controller: seconds since last reconcile",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 23
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "time() - permissioning_controller_last_reconcile_timestamp_seconds",
+          "legendFormat": "age",
+          "refId": "A"
+        }
+      ],
+      "description": "The controller fails open, so a stale controller is invisible from the network's behaviour. Does not advance on failed passes.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 8,
+      "title": "Controller: blocks behind head",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 23
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "besu_blockchain_difficulty - on() group_right() permissioning_controller_last_block",
+          "legendFormat": "lag",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Controller: failed reloads",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 23
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "permissioning_controller_failed_reloads",
+          "legendFormat": "nodes",
+          "refId": "A"
+        }
+      ],
+      "description": "Nodes enforcing an older allowlist than the registry says."
+    },
+    {
+      "id": 10,
+      "title": "Soonest certificate expiry",
+      "type": "stat",
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 0,
+        "y": 29
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "min(consortium_certificate_expiry_days)",
+          "legendFormat": "days",
+          "refId": "A"
+        }
+      ],
+      "description": "Certificates rotate annually by hand. When one expires the RPC endpoint stops accepting clients and Besu logs nothing.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "d"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 11,
+      "title": "Certificate expiry",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 6,
+        "w": 18,
+        "x": 6,
+        "y": 29
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "consortium_certificate_expiry_days",
+          "legendFormat": "{{certificate}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "d"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 12,
+      "title": "Active members",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 35
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "permissioning_controller_active_members",
+          "legendFormat": "active",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "title": "Allowlisted nodes",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 35
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "permissioning_controller_allowlisted_nodes",
+          "legendFormat": "nodes",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "title": "Allowlisted accounts",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 35
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "permissioning_controller_allowlisted_accounts",
+          "legendFormat": "accounts",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "title": "Transaction pool",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 35
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "besu_transaction_pool_number_of_transactions",
+          "legendFormat": "{{node}}",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}
