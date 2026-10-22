@@ -51,7 +51,11 @@ x-besu-command: &besu-command >-
   --rpc-http-enabled
   --rpc-http-host=0.0.0.0
   --rpc-http-port=8545
-  --rpc-http-api=ETH,NET,WEB3,QBFT,ADMIN,TXPOOL
+  --rpc-http-api=ETH,NET,WEB3,QBFT,ADMIN,TXPOOL,PERM
+  --permissions-nodes-config-file-enabled
+  --permissions-accounts-config-file-enabled
+  --permissions-nodes-config-file=/perm/permissions.toml
+  --permissions-accounts-config-file=/perm/permissions.toml
   --host-allowlist=*
   --rpc-http-tls-enabled
   --rpc-http-tls-keystore-file=/keystores/node.p12
@@ -77,6 +81,7 @@ services:
       - ../config/${LOC_ENV:-local}/static-nodes.json:/config/static-nodes.json:ro
       - ../pki/out/keystores/truststore.p12:/keystores/truststore.p12:ro
       - ../pki/out/keystores/keystore.password:/keystores/keystore.password:ro
+      - ../config/${LOC_ENV:-local}/permissions.toml:/perm/permissions.toml
       - ../keys/${LOC_ENV:-local}/validator-1.importer-bank/key.priv:/keys/key.priv:ro
       - ../pki/out/keystores/validator-1.importer-bank.p12:/keystores/node.p12:ro
       - validator-importer-data:/data
@@ -89,6 +94,7 @@ services:
       - ../config/${LOC_ENV:-local}/static-nodes.json:/config/static-nodes.json:ro
       - ../pki/out/keystores/truststore.p12:/keystores/truststore.p12:ro
       - ../pki/out/keystores/keystore.password:/keystores/keystore.password:ro
+      - ../config/${LOC_ENV:-local}/permissions.toml:/perm/permissions.toml
       - ../keys/${LOC_ENV:-local}/validator-1.exporter-bank/key.priv:/keys/key.priv:ro
       - ../pki/out/keystores/validator-1.exporter-bank.p12:/keystores/node.p12:ro
       - validator-exporter-data:/data
@@ -101,6 +107,7 @@ services:
       - ../config/${LOC_ENV:-local}/static-nodes.json:/config/static-nodes.json:ro
       - ../pki/out/keystores/truststore.p12:/keystores/truststore.p12:ro
       - ../pki/out/keystores/keystore.password:/keystores/keystore.password:ro
+      - ../config/${LOC_ENV:-local}/permissions.toml:/perm/permissions.toml
       - ../keys/${LOC_ENV:-local}/validator-1.logistics/key.priv:/keys/key.priv:ro
       - ../pki/out/keystores/validator-1.logistics.p12:/keystores/node.p12:ro
       - validator-logistics-data:/data
@@ -113,6 +120,7 @@ services:
       - ../config/${LOC_ENV:-local}/static-nodes.json:/config/static-nodes.json:ro
       - ../pki/out/keystores/truststore.p12:/keystores/truststore.p12:ro
       - ../pki/out/keystores/keystore.password:/keystores/keystore.password:ro
+      - ../config/${LOC_ENV:-local}/permissions.toml:/perm/permissions.toml
       - ../keys/${LOC_ENV:-local}/validator-1.operator/key.priv:/keys/key.priv:ro
       - ../pki/out/keystores/validator-1.operator.p12:/keystores/node.p12:ro
       - validator-operator-data:/data
@@ -125,6 +133,7 @@ services:
       - ../config/${LOC_ENV:-local}/static-nodes.json:/config/static-nodes.json:ro
       - ../pki/out/keystores/truststore.p12:/keystores/truststore.p12:ro
       - ../pki/out/keystores/keystore.password:/keystores/keystore.password:ro
+      - ../config/${LOC_ENV:-local}/permissions.toml:/perm/permissions.toml
       - ../keys/${LOC_ENV:-local}/rpc-1.operator/key.priv:/keys/key.priv:ro
       - ../pki/out/keystores/rpc-1.operator.p12:/keystores/node.p12:ro
       - rpc-1-data:/data
@@ -137,6 +146,7 @@ services:
       - ../config/${LOC_ENV:-local}/static-nodes.json:/config/static-nodes.json:ro
       - ../pki/out/keystores/truststore.p12:/keystores/truststore.p12:ro
       - ../pki/out/keystores/keystore.password:/keystores/keystore.password:ro
+      - ../config/${LOC_ENV:-local}/permissions.toml:/perm/permissions.toml
       - ../keys/${LOC_ENV:-local}/rpc-2.operator/key.priv:/keys/key.priv:ro
       - ../pki/out/keystores/rpc-2.operator.p12:/keystores/node.p12:ro
       - rpc-2-data:/data
@@ -173,6 +183,42 @@ services:
       # a deployment aimed at the wrong stack fails rather than succeeding
       # against the network holding real state.
       - "127.0.0.1:${PROXY_PORT:-8600}:8600"
+    networks:
+      consortium: {}
+
+  # --- permissioning controller ----------------------------------------------
+  # Reconciles node and account allowlists against the on-chain MemberRegistry
+  # and reloads them in place.
+  #
+  # Exists because Besu removed its onchain permissioning hook in the 25.6.0
+  # line while keeping file-based permissioning and the PERM API. The registry
+  # is still the authority on membership; only the enforcement point moved off
+  # chain. Validator set changes need none of this, because the QBFT validator
+  # contract hook survived. See ADR 0006.
+  #
+  # Presents the operator's `controller` certificate, the most sensitive
+  # end-entity certificate in the network: holding it is holding the ability to
+  # change who may connect.
+  #
+  # In the `ops` profile because REGISTRY_ADDRESS only exists after deployment.
+  permissioning-controller:
+    build: ../../services/permissioning-controller
+    profiles: ["ops"]
+    restart: unless-stopped
+    environment:
+      REGISTRY_ADDRESS: ${REGISTRY_ADDRESS:?set REGISTRY_ADDRESS to the deployed MemberRegistry}
+      NODE_URLS: "https://validator-1.importer-bank.loc.consortium:8545,https://validator-1.exporter-bank.loc.consortium:8545,https://validator-1.logistics.loc.consortium:8545,https://validator-1.operator.loc.consortium:8545,https://rpc-1.operator.loc.consortium:8545,https://rpc-2.operator.loc.consortium:8545"
+      INFRASTRUCTURE_ENODES: ${INFRASTRUCTURE_ENODES:-}
+      INFRASTRUCTURE_ACCOUNTS: ${INFRASTRUCTURE_ACCOUNTS:-}
+      INTERVAL_MS: ${CONTROLLER_INTERVAL_MS:-10000}
+      HEARTBEAT_FILE: /perm/state/heartbeat.json
+    volumes:
+      # Read-write: the controller is this file's only writer.
+      - ../config/${LOC_ENV:-local}/permissions.toml:/perm/permissions.toml
+      - ../config/${LOC_ENV:-local}/controller:/perm/state
+      - ../pki/out/operator/issued/controller/controller.chain.pem:/certs/client.chain.pem:ro
+      - ../pki/out/operator/issued/controller/controller.key.pem:/certs/client.key.pem:ro
+      - ../pki/out/root/certs/root.cert.pem:/certs/root.pem:ro
     networks:
       consortium: {}
 
