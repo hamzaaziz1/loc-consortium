@@ -31,3 +31,21 @@ basicConstraints       = critical, CA:false
 keyUsage               = critical, digitalSignature
 extendedKeyUsage       = clientAuth
 subjectAltName         = DNS:$ENV::LEAF_CN
+
+# An encryption certificate. Separate from the client certificate on purpose.
+#
+# Client and node certificates carry keyUsage: digitalSignature only, because
+# m1 issued them least-privilege. Using one of those for ECDH key agreement
+# contradicts what the certificate asserts it is for: OpenSSL permits it, a
+# strict verifier would not, and a reviewer would rightly flag it.
+#
+# Signing keys and encryption keys should differ regardless. A signing key
+# proves who acted; an encryption key protects content, outlives the messages
+# it protected, and may need escrow. Those are different lifecycles and the
+# certificate should say which is which.
+[ v3_encryption ]
+subjectKeyIdentifier   = hash
+authorityKeyIdentifier = keyid,issuer
+basicConstraints       = critical, CA:false
+keyUsage               = critical, keyAgreement
+subjectAltName         = DNS:$ENV::LEAF_CN

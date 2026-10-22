@@ -91,6 +91,7 @@ issue_leaf() {
   case "$kind" in
     node)   ext=v3_node ;;
     client) ext=v3_client ;;
+    enc)    ext=v3_encryption ;;
     *) echo "unknown kind: $kind" >&2; return 1 ;;
   esac
 
