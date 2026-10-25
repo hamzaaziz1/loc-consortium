@@ -194,7 +194,13 @@ services:
     environment:
       REGISTRY_ADDRESS: ${REGISTRY_ADDRESS:?set REGISTRY_ADDRESS to the deployed MemberRegistry}
       NODE_URLS: "https://validator-1.importer-bank.loc.consortium:8545,https://validator-1.exporter-bank.loc.consortium:8545,https://validator-1.logistics.loc.consortium:8545,https://validator-1.operator.loc.consortium:8545,https://rpc-1.operator.loc.consortium:8545,https://rpc-2.operator.loc.consortium:8545"
+      # Left unset deliberately. The controller reads static-nodes.json, which
+      # is the authoritative list of every node in the network. Setting this
+      # overrides that, and setting it WRONG removes nodes from their own
+      # network, so the default should not depend on anyone remembering to
+      # export a shell variable.
       INFRASTRUCTURE_ENODES: ${INFRASTRUCTURE_ENODES:-}
+      STATIC_NODES_FILE: /config/static-nodes.json
       INFRASTRUCTURE_ACCOUNTS: ${INFRASTRUCTURE_ACCOUNTS:-}
       INTERVAL_MS: ${CONTROLLER_INTERVAL_MS:-10000}
       HEARTBEAT_FILE: /perm/state/heartbeat.json
@@ -202,6 +208,7 @@ services:
     volumes:
       - ../config/${LOC_ENV:-local}/permissions.toml:/perm/permissions.toml
       - ../config/${LOC_ENV:-local}/controller:/perm/state
+      - ../config/${LOC_ENV:-local}/static-nodes.json:/config/static-nodes.json:ro
       - ../pki/out/operator/issued/controller/controller.chain.pem:/certs/client.chain.pem:ro
       - ../pki/out/operator/issued/controller/controller.key.pem:/certs/client.key.pem:ro
       - ../pki/out/root/certs/root.cert.pem:/certs/root.pem:ro

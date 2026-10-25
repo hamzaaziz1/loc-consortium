@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { RpcClient } = require('./rpc');
 const { Registry } = require('./registry');
-const { desiredAllowlists, renderToml, changed } = require('./reconcile');
+const { desiredAllowlists, renderToml, changed, missingStaticNodes } = require('./reconcile');
 const { Metrics } = require('./metrics');
 
 /**
@@ -48,6 +48,7 @@ const CONFIG = {
   // allowlist: node permissioning is each node deciding who it will talk to,
   // and in a consortium they should all reach the same answer.
   nodes: req('NODE_URLS').split(',').map((s) => s.trim()).filter(Boolean),
+  staticNodesFile: process.env.STATIC_NODES_FILE || '/config/static-nodes.json',
   intervalMs: Number(process.env.INTERVAL_MS || 10000),
 };
 
@@ -100,10 +101,17 @@ async function reconcileOnce() {
   // serve applications and must stay reachable regardless of membership
   // changes, so they are allowlisted from static config rather than from the
   // registry.
-  const infrastructureEnodes = (process.env.INFRASTRUCTURE_ENODES || '')
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
+  //
+  // Read from static-nodes.json by default rather than from an environment
+  // variable. That file is already the authoritative list of every node in the
+  // network and is generated from addressing.conf. An environment variable
+  // that silently defaults to empty, and whose emptiness locks nodes out of
+  // their own network on the next restart, is the wrong shape for this input.
+  // INFRASTRUCTURE_ENODES remains as an override.
+  const staticNodes = readStaticNodes();
+  const infrastructureEnodes = process.env.INFRASTRUCTURE_ENODES
+    ? process.env.INFRASTRUCTURE_ENODES.split(',').map((s) => s.trim()).filter(Boolean)
+    : staticNodes;
 
   const infrastructureAccounts = (process.env.INFRASTRUCTURE_ACCOUNTS || '')
     .split(',')
@@ -111,6 +119,19 @@ async function reconcileOnce() {
     .filter(Boolean);
 
   const desired = desiredAllowlists(members, { infrastructureEnodes, infrastructureAccounts });
+
+  // The invariant. An allowlist excluding a configured static node stops that
+  // node from starting, so the controller treats it as a bug in its own output
+  // rather than something to apply. Refusing leaves the previous allowlist in
+  // place, which is the fail-open behaviour this service is built around.
+  const missing = missingStaticNodes(desired, staticNodes);
+  if (missing.length > 0) {
+    throw new Error(
+      `refusing to write an allowlist missing ${missing.length} static node(s): ` +
+        `${missing.map((e) => e.split('@')[1] || e).join(', ')}. ` +
+        'Check INFRASTRUCTURE_ENODES and the registry; the previous allowlist is unchanged.',
+    );
+  }
   const next = renderToml(desired, { block, registry: CONFIG.registry });
 
   let previous = '';
@@ -174,6 +195,23 @@ async function reconcileOnce() {
     changed: true,
   });
   return { applied: true, block, desired };
+}
+
+/**
+ * Every node the network is configured to connect to. Read fresh each pass so
+ * a regenerated static node list is picked up without restarting.
+ */
+function readStaticNodes() {
+  try {
+    const raw = fs.readFileSync(CONFIG.staticNodesFile, 'utf8');
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    // Absent or unreadable. Returning empty means the guard below cannot fire,
+    // so this is logged rather than silently tolerated.
+    log(`warning: could not read ${CONFIG.staticNodesFile}; static node protection is inactive`);
+    return [];
+  }
 }
 
 function writeHeartbeat(extra) {

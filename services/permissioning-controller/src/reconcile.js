@@ -116,4 +116,32 @@ function stripComments(text) {
     .trim();
 }
 
-module.exports = { desiredAllowlists, renderToml, changed, normaliseEnode };
+/**
+ * Refuses an allowlist that would exclude a node the network is configured to
+ * connect to.
+ *
+ * This is an invariant, not a configuration preference, and it is enforced
+ * here for the same reason the validator floor lives in the registry rather
+ * than the governor: the component that can cause the damage refuses, instead
+ * of relying on whoever configures it upstream being careful.
+ *
+ * The failure it prevents is specifically nasty. Besu will not start when a
+ * static node is missing from its allowlist, and a running controller
+ * overwrites a hand-corrected file within one reconcile interval. So the
+ * symptom is a node refusing to start, citing a file that looks correct by the
+ * time anyone reads it, with the correction being silently undone faster than
+ * it can be made. That cost twenty minutes to diagnose once and would cost it
+ * again.
+ *
+ * @param {{nodes: string[]}} desired
+ * @param {string[]} staticNodes every enode in static-nodes.json
+ * @returns {string[]} the enodes that would be excluded, empty when safe
+ */
+function missingStaticNodes(desired, staticNodes) {
+  const allowed = new Set(desired.nodes.map(normaliseEnode));
+  return (staticNodes || [])
+    .map(normaliseEnode)
+    .filter((enode) => !allowed.has(enode));
+}
+
+module.exports = { desiredAllowlists, renderToml, changed, normaliseEnode, missingStaticNodes };
