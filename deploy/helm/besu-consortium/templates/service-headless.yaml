@@ -1,0 +1,32 @@
+# Headless service: no cluster IP, one DNS record per pod.
+#
+# This is what gives each node a stable name across rescheduling. Pods get new
+# IP addresses every time they move, so a static node list written at deploy
+# time would be wrong by the first restart.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-headless
+  labels:
+    {{- include "besu.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  # Peers must be resolvable before they are ready, because readiness depends
+  # on peering: a node with no peers never becomes ready, and if DNS waits for
+  # readiness the network can never form. This is the detail that makes
+  # peer-to-peer workloads different from ordinary services.
+  publishNotReadyAddresses: true
+  selector:
+    app.kubernetes.io/name: {{ .Chart.Name }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - name: p2p-tcp
+      port: {{ .Values.p2pPort }}
+      protocol: TCP
+    - name: p2p-udp
+      port: {{ .Values.p2pPort }}
+      protocol: UDP
+    - name: rpc
+      port: {{ .Values.rpcPort }}
+    - name: metrics
+      port: {{ .Values.metricsPort }}

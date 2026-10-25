@@ -1,0 +1,22 @@
+# Local kind cluster.
+#
+# Smaller resources because kind runs inside Docker on a laptop that is already
+# running the Compose stack. The image is loaded into the cluster with
+# `kind load docker-image` rather than pulled, so pullPolicy must not be
+# Always or the node will try to fetch it and fail.
+
+image:
+  pullPolicy: IfNotPresent
+
+besuOpts: "-Xmx384m"
+
+resources:
+  requests:
+    memory: 512Mi
+    cpu: 100m
+  limits:
+    memory: 768Mi
+
+persistence:
+  storageClass: standard
+  size: 1Gi

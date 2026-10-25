@@ -1,0 +1,27 @@
+{{- range .Values.nodes }}
+{{- if eq .role "rpc" }}
+---
+# A named service per RPC node, so applications address a role rather than a
+# pod. Validators get no service: application traffic should never reach a
+# block producer.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $.Release.Name }}-{{ .name }}
+  labels:
+    {{- include "besu.labels" $ | nindent 4 }}
+    consortium/role: rpc
+spec:
+  type: {{ $.Values.rpcService.type }}
+  selector:
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+    consortium/node: {{ .name }}
+  ports:
+    - name: rpc
+      port: {{ $.Values.rpcPort }}
+      targetPort: rpc
+    - name: metrics
+      port: {{ $.Values.metricsPort }}
+      targetPort: metrics
+{{- end }}
+{{- end }}

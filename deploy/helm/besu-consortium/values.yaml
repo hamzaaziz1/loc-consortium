@@ -1,0 +1,77 @@
+# Defaults for the consortium chart.
+#
+# The node list mirrors network/pki/openssl/nodes.conf and
+# network/config/<env>/addressing.conf, which are the single sources of truth
+# for Compose. Kubernetes does not use the IP addresses: pods get dynamic ones,
+# which is the whole reason this chart needs an init container.
+
+image:
+  repository: hyperledger/besu
+  tag: "26.8.1"
+  pullPolicy: IfNotPresent
+
+# Besu reads JVM options from BESU_OPTS. Uncapped, each node sizes its heap
+# from node memory, and six of them will exhaust a small cluster.
+besuOpts: "-Xmx512m"
+
+resources:
+  requests:
+    memory: 768Mi
+    cpu: 250m
+  limits:
+    memory: 1Gi
+
+persistence:
+  # kind's default provisioner. Overridden per environment: see the EKS and
+  # AKS notes in README.md, where this is the single most important value to
+  # change and the one most likely to be wrong.
+  storageClass: standard
+  size: 5Gi
+
+p2pPort: 30303
+rpcPort: 8545
+metricsPort: 9545
+
+# Every node in the consortium. `validator` is informational here: the
+# validator set is read from the ValidatorSetView contract on chain, not from
+# this file, so changing it has no effect on consensus.
+nodes:
+  - name: validator-importer
+    certName: validator-1.importer-bank
+    org: importer-bank
+    role: validator
+  - name: validator-exporter
+    certName: validator-1.exporter-bank
+    org: exporter-bank
+    role: validator
+  - name: validator-logistics
+    certName: validator-1.logistics
+    org: logistics
+    role: validator
+  - name: validator-operator
+    certName: validator-1.operator
+    org: operator
+    role: validator
+  - name: rpc-1
+    certName: rpc-1.operator
+    org: operator
+    role: rpc
+  - name: rpc-2
+    certName: rpc-2.operator
+    org: operator
+    role: rpc
+
+# Secrets are created by tools/k8s-secrets.sh from the generated PKI rather
+# than templated from values. Key material must never pass through a values
+# file, which ends up in shell history, CI logs and helm's release storage.
+secrets:
+  keystores: besu-keystores
+  nodeKeys: besu-node-keys
+
+rpcService:
+  # ClusterIP by default. In a real deployment this is where the decision
+  # about exposing RPC lives, and it should not be a LoadBalancer without the
+  # mutual TLS story being understood: the endpoint requires a client
+  # certificate, so a public load balancer in front of it is not the hole it
+  # first appears, but it is still an attack surface.
+  type: ClusterIP

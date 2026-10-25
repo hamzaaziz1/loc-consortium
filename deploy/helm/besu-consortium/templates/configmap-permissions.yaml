@@ -1,0 +1,15 @@
+# The initial allowlist. Copied into a writable volume by the init container,
+# because Besu needs to be able to write this file and ConfigMap mounts are
+# read-only.
+#
+# Once the permissioning controller runs against the cluster it becomes the
+# writer, exactly as on Compose. Until then this is the starting state.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-permissions
+  labels:
+    {{- include "besu.labels" . | nindent 4 }}
+data:
+  permissions.toml: |
+{{ .Files.Get "files/permissions.toml" | required "copy the generated permissions file to deploy/helm/besu-consortium/files/permissions.toml" | indent 4 }}

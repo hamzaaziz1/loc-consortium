@@ -33,3 +33,5 @@ network/compose/compose.addressing.yml
 network/config/deploy.json
 network/config/*/terms/
 observability/textfile/
+deploy/helm/besu-consortium/files/
+deploy/helm/besu-consortium/values-nodes.yaml

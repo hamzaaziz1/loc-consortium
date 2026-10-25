@@ -1,0 +1,172 @@
+{{- $root := . }}
+{{- range .Values.nodes }}
+---
+# One StatefulSet per node rather than one with six replicas.
+#
+# Replicas are interchangeable; these nodes are not. Each has its own identity
+# key, its own TLS certificate, its own organisation and its own role. Modelling
+# them as replicas would mean indexing secrets by ordinal and hoping the
+# ordering never changes, which is exactly the kind of implicit coupling that
+# breaks quietly.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $root.Release.Name }}-{{ .name }}
+  labels:
+    {{- include "besu.labels" $root | nindent 4 }}
+    consortium/node: {{ .name }}
+    consortium/org: {{ .org }}
+    consortium/role: {{ .role }}
+spec:
+  serviceName: {{ $root.Release.Name }}-headless
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $root.Chart.Name }}
+      app.kubernetes.io/instance: {{ $root.Release.Name }}
+      consortium/node: {{ .name }}
+  template:
+    metadata:
+      labels:
+        {{- include "besu.labels" $root | nindent 8 }}
+        consortium/node: {{ .name }}
+        consortium/org: {{ .org }}
+        consortium/role: {{ .role }}
+    spec:
+      # Besu writes to its data directory as the image's own user. Setting the
+      # fsGroup makes the mounted volume group-writable by it, which is the
+      # Kubernetes equivalent of the --user flag the Compose generators pass.
+      securityContext:
+        fsGroup: 1000
+
+      initContainers:
+        - name: resolve-peers
+          image: busybox:1.37
+          command: ["/bin/sh", "/scripts/build-static-nodes.sh"]
+          env:
+            - name: RELEASE
+              value: {{ $root.Release.Name }}
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: P2P_PORT
+              value: {{ $root.Values.p2pPort | quote }}
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+            - name: enodes
+              mountPath: /enodes
+            - name: permissions
+              mountPath: /permissions
+            - name: shared
+              mountPath: /shared
+
+      containers:
+        - name: besu
+          image: "{{ $root.Values.image.repository }}:{{ $root.Values.image.tag }}"
+          imagePullPolicy: {{ $root.Values.image.pullPolicy }}
+          env:
+            - name: BESU_OPTS
+              value: {{ $root.Values.besuOpts | quote }}
+          args:
+            - --genesis-file=/genesis/genesis.json
+            - --data-path=/data
+            - --node-private-key-file=/node-key/{{ .certName }}
+            - --static-nodes-file=/shared/static-nodes.json
+            - --p2p-port={{ $root.Values.p2pPort }}
+            - --min-gas-price=0
+            - --rpc-http-enabled
+            - --rpc-http-host=0.0.0.0
+            - --rpc-http-port={{ $root.Values.rpcPort }}
+            - --rpc-http-api=ETH,NET,WEB3,QBFT,ADMIN,TXPOOL,PERM
+            - --host-allowlist=*
+            - --rpc-http-tls-enabled
+            - --rpc-http-tls-keystore-file=/keystores/{{ .certName }}.p12
+            - --rpc-http-tls-keystore-password-file=/keystores/keystore.password
+            - --rpc-http-tls-client-auth-enabled
+            - --rpc-http-tls-truststore-file=/keystores/truststore.p12
+            - --rpc-http-tls-truststore-password-file=/keystores/keystore.password
+            - --permissions-nodes-config-file-enabled
+            - --permissions-accounts-config-file-enabled
+            - --permissions-nodes-config-file=/shared/permissions.toml
+            - --permissions-accounts-config-file=/shared/permissions.toml
+            - --metrics-enabled
+            - --metrics-host=0.0.0.0
+            - --metrics-port={{ $root.Values.metricsPort }}
+          ports:
+            - name: p2p-tcp
+              containerPort: {{ $root.Values.p2pPort }}
+              protocol: TCP
+            - name: p2p-udp
+              containerPort: {{ $root.Values.p2pPort }}
+              protocol: UDP
+            - name: rpc
+              containerPort: {{ $root.Values.rpcPort }}
+            - name: metrics
+              containerPort: {{ $root.Values.metricsPort }}
+          # Probed on the metrics port, not RPC. RPC requires a client
+          # certificate, and giving the kubelet one would mean an operator
+          # identity in every node's spec for the sake of a health check.
+          readinessProbe:
+            httpGet:
+              path: /metrics
+              port: metrics
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /metrics
+              port: metrics
+            initialDelaySeconds: 90
+            periodSeconds: 30
+          resources:
+            {{- toYaml $root.Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: genesis
+              mountPath: /genesis
+            - name: keystores
+              mountPath: /keystores
+            - name: node-key
+              mountPath: /node-key
+            - name: shared
+              mountPath: /shared
+
+      volumes:
+        - name: scripts
+          configMap:
+            name: {{ $root.Release.Name }}-enodes
+            defaultMode: 0755
+        - name: enodes
+          configMap:
+            name: {{ $root.Release.Name }}-enodes
+        - name: genesis
+          configMap:
+            name: {{ $root.Release.Name }}-genesis
+        - name: permissions
+          configMap:
+            name: {{ $root.Release.Name }}-permissions
+        - name: keystores
+          secret:
+            secretName: {{ $root.Values.secrets.keystores }}
+        - name: node-key
+          secret:
+            secretName: {{ $root.Values.secrets.nodeKeys }}
+        # Writable scratch shared between the init container and Besu. The
+        # static node list and the permissions file both live here because
+        # both have to be writable or generated at startup.
+        - name: shared
+          emptyDir: {}
+
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: {{ $root.Values.persistence.storageClass }}
+        resources:
+          requests:
+            storage: {{ $root.Values.persistence.size }}
+{{- end }}

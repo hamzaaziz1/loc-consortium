@@ -1,0 +1,88 @@
+# Node public keys, and the script that turns them into a static node list.
+#
+# The public keys are known at deploy time; the IP addresses are not. So this
+# carries the keys and the resolution logic, and the init container runs it
+# inside the pod where the addresses exist.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-enodes
+  labels:
+    {{- include "besu.labels" . | nindent 4 }}
+data:
+  pubkeys.txt: |
+    {{- range .Values.nodes }}
+    {{ .name }} {{ required (printf "set nodes[].pubkey for %s, from network/genesis/<env>/manifest.json" .name) .pubkey }}
+    {{- end }}
+
+  build-static-nodes.sh: |
+    #!/bin/sh
+    # Resolves every peer's stable DNS name to an IP and writes the static node
+    # list Besu requires.
+    #
+    # Besu rejects enode URLs containing hostnames: devp2p identifies a peer by
+    # its public key and treats the address as nothing more than a route, so
+    # name resolution sits outside the protocol. On Compose that is solved with
+    # fixed IPs. Pods cannot have fixed IPs, so resolution happens here, at
+    # startup, where the addresses are real.
+    set -eu
+    OUT=/shared/static-nodes.json
+    echo "[" > "$OUT"
+    first=1
+    while read -r name pubkey; do
+      [ -z "$name" ] && continue
+      dns="${RELEASE}-${name}-0.${RELEASE}-headless.${NAMESPACE}.svc.cluster.local"
+
+      # Retry: a peer's pod may not exist yet on a cold start, and a missing
+      # entry means that node can never be dialled. Better to wait than to
+      # write a list that is quietly incomplete.
+      ip=""
+      n=0
+      while [ "$n" -lt 60 ]; do
+        # nslookup, not getent: busybox has no getent, and a missing binary
+        # presents identically to a DNS failure, so the retry loop runs its
+        # full two minutes before reporting a name it never actually queried.
+        ip="$(nslookup "$dns" 2>/dev/null | awk '/^Address: /{print $2; exit}' || true)"
+        [ -n "$ip" ] && break
+        n=$((n+1))
+        sleep 2
+      done
+      if [ -z "$ip" ]; then
+        echo "could not resolve $dns after two minutes" >&2
+        exit 1
+      fi
+
+      [ "$first" -eq 1 ] || echo "," >> "$OUT"
+      first=0
+      printf '  "enode://%s@%s:%s"' "$pubkey" "$ip" "${P2P_PORT}" >> "$OUT"
+    done < /enodes/pubkeys.txt
+    echo "" >> "$OUT"
+    echo "]" >> "$OUT"
+    cat "$OUT"
+
+    # The node allowlist is built from the same resolution, not copied from the
+    # prepared file.
+    #
+    # On Compose the allowlist and the peer list come from different places and
+    # both contain fixed addresses. In Kubernetes neither address is known
+    # until the pods exist, so they are the same problem: an allowlist prepared
+    # ahead of time describes a network that does not exist yet, and Besu
+    # refuses to start when a static node is missing from it.
+    #
+    # The accounts allowlist is copied from the prepared file, because account
+    # addresses are chain state and have nothing to do with pod scheduling.
+    NODES="$(sed -n 's/^.*"enode/"enode/p' "$OUT" | tr -d '\n' | sed 's/,$//')"
+    {
+      echo "# Generated in-cluster by the resolve-peers init container."
+      echo "# Node addresses are pod IPs, which do not exist until scheduling."
+      grep '^accounts-allowlist=' /permissions/permissions.toml || echo 'accounts-allowlist=[]'
+      printf 'nodes-allowlist=[%s]\n' "$(tr -d '\n' < "$OUT" | sed 's/^\[//; s/\]$//')"
+    } > /shared/permissions.toml
+
+    # World readable: the Besu container runs as a different user than this
+    # init container, and Besu must be able to write this file because the
+    # perm_add* RPC methods persist back to it. A read-only or unwritable file
+    # fails with ERROR_ALLOWLIST_PERSIST_FAIL, or warns and disables
+    # modification, depending on which check it trips.
+    chmod 666 /shared/permissions.toml
+    cat /shared/permissions.toml
