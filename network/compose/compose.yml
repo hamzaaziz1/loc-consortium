@@ -192,7 +192,13 @@ services:
     profiles: ["ops"]
     restart: unless-stopped
     environment:
-      REGISTRY_ADDRESS: ${REGISTRY_ADDRESS:?set REGISTRY_ADDRESS to the deployed MemberRegistry}
+      # A plain default, not ${VAR:?...}. The required-variable form makes
+      # Compose refuse to interpolate the file at all, so an unset variable
+      # blocks every command in the project including `stop` and `down`,
+      # not just starting this service. The controller validates it at
+      # startup and exits with a clear message, which is where that check
+      # belongs.
+      REGISTRY_ADDRESS: ${REGISTRY_ADDRESS:-}
       NODE_URLS: "https://validator-1.importer-bank.loc.consortium:8545,https://validator-1.exporter-bank.loc.consortium:8545,https://validator-1.logistics.loc.consortium:8545,https://validator-1.operator.loc.consortium:8545,https://rpc-1.operator.loc.consortium:8545,https://rpc-2.operator.loc.consortium:8545"
       # Left unset deliberately. The controller reads static-nodes.json, which
       # is the authoritative list of every node in the network. Setting this

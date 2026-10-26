@@ -27,14 +27,48 @@ command -v kubectl >/dev/null || { echo "kubectl is required"; exit 1; }
 mkdir -p "$CHART/files"
 
 echo "==> chart files"
-cp "$ENV_GENESIS" "$CHART/files/genesis.json"
+
+# THE GENESIS IS COPIED WITHOUT ITS TRANSITIONS BLOCK, DELIBERATELY.
+#
+# The local chain's genesis carries a transitions entry moving QBFT to contract
+# validator selection at block 17300. From that block every node reads the
+# validator set from ValidatorSetView and expects the header extraData to
+# contain NO validators.
+#
+# A fresh chain started from that genesis fails at block 1 with "Validators in
+# extra data expected to be empty", because the genesis extraData embeds all
+# four and the proposer builds block 1 the same way. It worked on Compose only
+# because seventeen thousand blocks of header-based history came first, and the
+# contract was deployed long before the transition fired.
+#
+# So this deployment starts in header-voting mode, exactly as the Compose
+# network did, and moving it to contract validator selection is a day-two
+# operation with its own runbook entry rather than something baked into a
+# fresh install. Making the chart depend on contract deployment order would be
+# the wrong coupling: the chart deploys a network, it does not deploy
+# governance.
+#
+# KEEP_TRANSITIONS=1 copies the genesis unchanged, which is correct when
+# restoring a cluster onto an existing chain whose contracts are already
+# deployed.
+if [[ "${KEEP_TRANSITIONS:-0}" == "1" ]]; then
+  cp "$ENV_GENESIS" "$CHART/files/genesis.json"
+  echo "    genesis.json (transitions kept)"
+else
+  jq 'del(.config.transitions)' "$ENV_GENESIS" > "$CHART/files/genesis.json"
+  if jq -e '.config.transitions' "$ENV_GENESIS" >/dev/null 2>&1; then
+    echo "    genesis.json (transitions stripped: fresh chain starts in header-voting mode)"
+  else
+    echo "    genesis.json"
+  fi
+fi
 if [[ -f "$ENV_CONFIG_DIR/permissions.toml" ]]; then
   cp "$ENV_CONFIG_DIR/permissions.toml" "$CHART/files/permissions.toml"
 else
   "$REPO/tools/gen-permissions.sh" >/dev/null
   cp "$ENV_CONFIG_DIR/permissions.toml" "$CHART/files/permissions.toml"
 fi
-echo "    genesis.json and permissions.toml"
+echo "    permissions.toml"
 
 echo "==> node public keys"
 # The chart needs each node's devp2p public key to build enode URLs. The IP

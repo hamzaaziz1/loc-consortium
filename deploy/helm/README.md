@@ -53,6 +53,30 @@ because the `perm_add*` RPC methods persist allowlist changes back to it. A
 read-only mount fails with `ERROR_ALLOWLIST_PERSIST_FAIL`. The init container
 copies it into a writable `emptyDir`.
 
+## The genesis is modified on the way in
+
+`k8s-prepare.sh` strips the `transitions` block from the genesis it copies.
+
+The local chain's genesis moves QBFT to contract validator selection at block
+17300. A fresh chain started from that genesis fails at block 1 with
+`Validators in extra data expected to be empty`: from the transition onward
+Besu expects the validator set to come from the contract and the header
+extraData to be empty, while the genesis extraData embeds all four validators
+and the proposer builds block 1 the same way.
+
+It worked on Compose because seventeen thousand blocks of header-based history
+came first and the contract was deployed long before the transition fired.
+
+So a fresh Kubernetes deployment starts in header-voting mode, and moving it to
+contract validator selection is a day-two operation: deploy the contracts, add
+a transitions entry at a future block, restart. That is the same procedure the
+Compose network followed and it belongs in the runbook, not in a fresh install.
+Making the chart depend on contract deployment order would be the wrong
+coupling: the chart deploys a network, not governance.
+
+`KEEP_TRANSITIONS=1` copies the genesis unchanged, which is what you want when
+restoring a cluster onto an existing chain whose contracts already exist.
+
 ## One StatefulSet per node
 
 Replicas are interchangeable; these nodes are not. Each has its own identity
