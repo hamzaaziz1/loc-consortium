@@ -78,18 +78,25 @@ declare -a REACHABLE
 # RPC listener is up, and CI runners are slower than a laptop. Without this the
 # suite fails on timing and the output looks identical to a broken network.
 echo "0. waiting for the network to answer"
+# Waits for EVERY node, not just the first. Checking one and then asserting
+# against all six means a node twenty seconds behind fails the peer count and
+# chain agreement checks, which looks like a broken network and is not.
 READY=0
-for _ in $(seq 1 30); do
-  if [[ -n "$(rpc_result eth_chainId '[]' "${ADDR_NODES[0]}" "${ADDR_RPC_PORTS[0]}")" ]]; then
+for _ in $(seq 1 45); do
+  answered=0
+  for i in "${!ADDR_NODES[@]}"; do
+    [[ -n "$(rpc_result eth_chainId '[]' "${ADDR_NODES[$i]}" "${ADDR_RPC_PORTS[$i]}")" ]] && answered=$((answered+1))
+  done
+  if [[ "$answered" -eq "${#ADDR_NODES[@]}" ]]; then
     READY=1
     break
   fi
   sleep 2
 done
 if [[ "$READY" -eq 1 ]]; then
-  ok "${ADDR_NODES[0]} answered"
+  ok "all ${#ADDR_NODES[@]} nodes answered"
 else
-  bad "no node answered within 60s"
+  bad "only $answered of ${#ADDR_NODES[@]} nodes answered within 90s"
 fi
 
 echo "1. every node answers over mutual TLS and is on the right chain"

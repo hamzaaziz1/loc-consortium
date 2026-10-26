@@ -5,11 +5,13 @@
   "description": "Reconciles Besu node and account allowlists against the on-chain MemberRegistry",
   "main": "src/index.js",
   "scripts": {
-    "start": "node src/index.js",
+    "start": "node init && node src/index.js",
     "test": "node test/reconcile.test.js"
   },
   "dependencies": {
     "ethers": "6.13.4"
   },
-  "engines": { "node": ">=20" }
+  "engines": {
+    "node": ">=20"
+  }
 }

@@ -17,7 +17,6 @@ contracts/broadcast/
 node_modules/
 
 # local env
-.env
 *.local
 
 # misc
@@ -35,3 +34,4 @@ network/config/*/terms/
 observability/textfile/
 deploy/helm/besu-consortium/files/
 deploy/helm/besu-consortium/values-nodes.yaml
+config.bat

@@ -14,10 +14,8 @@ ADRs are numbered in the order they are accepted, not grouped by subject.
 | [0004](0004-certificate-lifetimes-revocation-and-key-custody.md) | Certificate lifetimes, revocation distribution and key custody | Accepted |
 | [0005](0005-rpc-mutual-tls-design.md) | RPC mutual TLS, and the absence of transport security between nodes | Accepted |
 | [0006](0006-two-governance-paths.md) | Two governance paths, and why they differ | Accepted |
+| [0007](0007-no-contract-upgradeability.md) | Letters of credit are not upgradeable | Accepted |
+| [0008](0008-terms-privacy.md) | Letter of credit terms are sealed off chain | Accepted |
+| [0009](0009-enode-addressing.md) | Peers are reached by IP address, not by name | Accepted |
 
-Still to write:
-
-- enode addressing: why peers are reached by IP rather than name, and what
-  that implies for Kubernetes (m8)
-- contract upgradeability (m5)
-- privacy via per-party encryption and hash commitments (m6)
+An ADR with no consequences section is not a decision, it is an advertisement.
